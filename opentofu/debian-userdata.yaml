@@ -39,8 +39,5 @@ runcmd:
 # Set timezone
 timezone: America/New_York
 
-# Enable password authentication (optional - remove if not needed)
-ssh_pwauth: true
-
 # Create a simple motd
 final_message: "CDT Debian Trixie VM is ready for class!"
