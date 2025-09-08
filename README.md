@@ -128,7 +128,10 @@ tofu apply
 
 ### Step 5: Configure Servers with Ansible
 ```bash
-cd ../ansible
+# copy ansible directory to a remote server inside the network, use the 4th debian server for this. 
+# ssh -J sshproxy@ssh.cyberrange.rit.edu debian@100.65.X.X
+sudo apt install ansible
+cd ansible
 
 # Update inventory with actual IP addresses (if different)
 vim inventory.ini
