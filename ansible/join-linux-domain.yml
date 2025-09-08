@@ -1,0 +1,151 @@
+---
+- name: Join Linux servers to domain
+  hosts: linux_members
+  become: true
+  vars:
+    domain_controller_ip: "10.10.10.21"
+  tasks:
+    - name: Update package cache
+      ansible.builtin.apt:
+        update_cache: true
+
+    - name: Install required packages for domain joining
+      ansible.builtin.apt:
+        name:
+          - realmd
+          - sssd
+          - sssd-tools
+          - libnss-sss
+          - libpam-sss
+          - adcli
+          - samba-common-bin
+          - oddjob
+          - oddjob-mkhomedir
+          - packagekit
+          - krb5-user
+        state: present
+
+    - name: Configure DNS to use domain controller
+      ansible.builtin.lineinfile:
+        path: /etc/resolv.conf
+        line: "nameserver {{ domain_controller_ip }}"
+        insertbefore: BOF
+        backup: true
+
+    - name: Configure Kerberos realm
+      ansible.builtin.template:
+        dest: /etc/krb5.conf
+        mode: '0644'
+        content: |
+          [logging]
+          default = FILE:/var/log/krb5libs.log
+          kdc = FILE:/var/log/krb5kdc.log
+          admin_server = FILE:/var/log/kadmind.log
+
+          [libdefaults]
+          default_realm = {{ domain_name | upper }}.LOCAL
+          dns_lookup_realm = false
+          dns_lookup_kdc = true
+          ticket_lifetime = 24h
+          renew_lifetime = 7d
+          forwardable = true
+
+          [realms]
+          {{ domain_name | upper }}.LOCAL = {
+            kdc = {{ domain_controller_ip }}
+            admin_server = {{ domain_controller_ip }}
+            default_domain = {{ domain_name | lower }}.local
+          }
+
+          [domain_realm]
+          .{{ domain_name | lower }}.local = {{ domain_name | upper }}.LOCAL
+          {{ domain_name | lower }}.local = {{ domain_name | upper }}.LOCAL
+        backup: true
+
+    - name: Discover domain
+      ansible.builtin.command: realm discover {{ domain_name }}.local
+      register: realm_discover
+      failed_when: false
+      changed_when: false
+
+    - name: Join domain using realm
+      ansible.builtin.expect:
+        command: realm join --user={{ domain_admin_user }} {{ domain_name }}.local
+        responses:
+          "Password for *": "{{ domain_admin_password }}"
+        timeout: 300
+      register: realm_join
+      failed_when: false
+
+    - name: Configure SSSD for domain authentication
+      ansible.builtin.template:
+        dest: /etc/sssd/sssd.conf
+        mode: '0600'
+        content: |
+          [sssd]
+          domains = {{ domain_name }}.local
+          config_file_version = 2
+          services = nss, pam
+
+          [domain/{{ domain_name }}.local]
+          default_shell = /bin/bash
+          krb5_store_password_if_offline = True
+          cache_credentials = True
+          krb5_realm = {{ domain_name | upper }}.LOCAL
+          realmd_tags = manages-system joined-with-adcli
+          id_provider = ad
+          fallback_homedir = /home/%u@%d
+          ad_domain = {{ domain_name }}.local
+          use_fully_qualified_names = True
+          ldap_id_mapping = True
+          access_provider = ad
+        backup: true
+      notify: Restart sssd
+
+    - name: Configure PAM for automatic home directory creation
+      ansible.builtin.lineinfile:
+        path: /etc/pam.d/common-session
+        line: "session required pam_mkhomedir.so skel=/etc/skel umask=077"
+        insertafter: "session.*pam_unix.so"
+
+    - name: Configure SSH to allow domain users
+      ansible.builtin.lineinfile:
+        path: /etc/ssh/sshd_config
+        regexp: '^#?PasswordAuthentication'
+        line: 'PasswordAuthentication yes'
+        backup: true
+      notify: Restart ssh
+
+    - name: Allow domain users sudo access (optional)
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers.d/domain_users
+        line: "%domain\\ users@{{ domain_name }}.local ALL=(ALL) ALL"
+        create: true
+        mode: '0440'
+        validate: 'visudo -cf %s'
+
+    - name: Start and enable SSSD service
+      ansible.builtin.systemd:
+        name: sssd
+        state: started
+        enabled: true
+
+    - name: Verify domain join
+      ansible.builtin.command: realm list
+      register: realm_status
+      changed_when: false
+
+    - name: Display realm status
+      ansible.builtin.debug:
+        var: realm_status.stdout_lines
+
+  handlers:
+    - name: Restart sssd
+      ansible.builtin.systemd:
+        name: sssd
+        state: restarted
+
+    - name: Restart ssh
+      ansible.builtin.systemd:
+        name: ssh
+        state: restarted

@@ -1,0 +1,46 @@
+#cloud-config
+# Debian Trixie user-data script for CDT class
+password: Cyberrange123!
+package_reboot_if_required: true
+package_update: true
+package_upgrade: true
+
+packages:
+  - curl
+  - wget
+  - vim
+  - openssh-server
+  - tmux
+  - screen
+  - magic-wormhole
+  - net-tools
+  - htop
+
+
+# Create a basic welcome message
+write_files:
+  - path: /welcome.txt
+    content: |
+      Welcome to CDT Debian Trixie VM!
+      This is a basic setup that you can customize.
+      
+      Some useful commands:
+      - htop: system monitor
+      - ip addr: check IP addresses
+      - systemctl status: check services
+    owner: debian:debian
+    permissions: '0644'
+
+# Run commands after boot
+runcmd:
+  - echo "CDT Debian VM setup completed" >> /var/log/cdt-setup.log
+  - date >> /var/log/cdt-setup.log
+
+# Set timezone
+timezone: America/New_York
+
+# Enable password authentication (optional - remove if not needed)
+ssh_pwauth: true
+
+# Create a simple motd
+final_message: "CDT Debian Trixie VM is ready for class!"

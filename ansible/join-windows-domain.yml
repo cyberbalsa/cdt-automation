@@ -1,0 +1,49 @@
+---
+- name: Join Windows servers to domain
+  hosts: windows_members
+  gather_facts: false
+  vars:
+    domain_controller_ip: "10.10.10.21"
+  tasks:
+    - name: Set DNS server to domain controller
+      ansible.windows.win_dns_client:
+        adapter_names: "*"
+        ipv4_addresses:
+          - "{{ domain_controller_ip }}"
+
+    - name: Wait for DNS resolution of domain
+      ansible.windows.win_shell: |
+        nslookup {{ domain_name }}.local {{ domain_controller_ip }}
+      register: dns_check
+      until: dns_check.rc == 0
+      retries: 10
+      delay: 30
+      changed_when: false
+
+    - name: Join computer to domain
+      microsoft.ad.membership:
+        dns_domain_name: "{{ domain_name }}.local"
+        domain_admin_user: "{{ domain_admin_user }}@{{ domain_name }}.local"
+        domain_admin_password: "{{ domain_admin_password }}"
+        state: domain
+      register: domain_join_result
+
+    - name: Reboot after domain join
+      ansible.windows.win_reboot:
+        reboot_timeout: 600
+      when: domain_join_result.reboot_required
+
+    - name: Wait for system to come back online
+      ansible.builtin.wait_for_connection:
+        delay: 60
+        timeout: 300
+
+    - name: Verify domain membership
+      ansible.windows.win_shell: |
+        (Get-WmiObject -Class Win32_ComputerSystem).Domain
+      register: domain_verification
+      changed_when: false
+
+    - name: Display domain membership status
+      ansible.builtin.debug:
+        msg: "Computer is now member of: {{ domain_verification.stdout_lines[0] }}"

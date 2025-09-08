@@ -1,0 +1,55 @@
+---
+- name: CDT Domain Setup - Display Information
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Display setup information
+      ansible.builtin.debug:
+        msg:
+          - "Starting CDT Domain Setup"
+          - "Domain Controller: 10.10.10.21"
+          - "Windows Members: 10.10.10.22, 10.10.10.23"
+          - "Linux Members: 10.10.10.31, 10.10.10.32, 10.10.10.33"
+          - "Domain: CDT.local"
+
+- name: Setup Domain Controller
+  import_playbook: setup-domain-controller.yml
+
+- name: Join Windows Servers to Domain
+  import_playbook: join-windows-domain.yml
+
+- name: Join Linux Servers to Domain
+  import_playbook: join-linux-domain.yml
+
+- name: Create Domain Users
+  import_playbook: create-domain-users.yml
+
+- name: Final verification and summary
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Display completion message
+      ansible.builtin.debug:
+        msg:
+          - "CDT Domain setup completed successfully!"
+          - ""
+          - "Domain Controller: 10.10.10.21 (CDT.local)"
+          - "Windows Members: 10.10.10.22, 10.10.10.23"
+          - "Linux Members: 10.10.10.31, 10.10.10.32, 10.10.10.33"
+          - ""
+          - "Created Users:"
+          - "  - jdoe (John Doe)"
+          - "  - asmith (Alice Smith)"
+          - "  - bwilson (Bob Wilson)"
+          - "  - mjohnson (Mary Johnson)"
+          - "  - dlee (David Lee)"
+          - ""
+          - "SSH Access:"
+          - "  - All users can SSH to Linux boxes using: username@CDT.local"
+          - "  - Linux Admins (jdoe, asmith) have sudo access"
+          - "  - Password authentication enabled for domain users"
+          - ""
+          - "Next Steps:"
+          - "  1. Test SSH: ssh jdoe@CDT.local@10.10.10.31"
+          - "  2. Verify domain join: realm list (on Linux boxes)"
+          - "  3. Check Windows domain membership in Computer Properties"

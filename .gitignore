@@ -1,0 +1,56 @@
+# OpenTofu/Terraform files
+*.tfstate
+*.tfstate.*
+*.tfvars
+*.tfvars.json
+.terraform/
+.terraform.lock.hcl
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Ansible files
+*.retry
+.vault_pass
+vault_password_file
+ansible.cfg.local
+inventory/local
+host_vars/*/vault.yml
+group_vars/*/vault.yml
+*.pyc
+__pycache__/
+.pytest_cache/
+collections/
+roles/
+.ansible/
+
+# General
+.DS_Store
+Thumbs.db
+*.log
+*.tmp
+*.swp
+*.swo
+*~
+.vscode/
+.idea/
+*.backup
+*.bak
+
+# SSH keys and certificates
+*.pem
+*.key
+*.crt
+*.p12
+id_rsa*
+id_ed25519*
+
+# Environment files
+.env
+.env.local
+.env.*.local

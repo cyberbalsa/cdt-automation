@@ -1,0 +1,138 @@
+---
+- name: Create domain users and configure access
+  hosts: windows_dc
+  gather_facts: false
+  vars:
+    domain_users:
+      - username: "jdoe"
+        firstname: "John"
+        lastname: "Doe"
+        password: "UserPass123!"
+      - username: "asmith"
+        firstname: "Alice"
+        lastname: "Smith"
+        password: "UserPass123!"
+      - username: "bwilson"
+        firstname: "Bob"
+        lastname: "Wilson"
+        password: "UserPass123!"
+      - username: "mjohnson"
+        firstname: "Mary"
+        lastname: "Johnson"
+        password: "UserPass123!"
+      - username: "dlee"
+        firstname: "David"
+        lastname: "Lee"
+        password: "UserPass123!"
+  tasks:
+    - name: Create domain users
+      microsoft.ad.user:
+        name: "{{ item.username }}"
+        firstname: "{{ item.firstname }}"
+        surname: "{{ item.lastname }}"
+        password: "{{ item.password }}"
+        password_never_expires: true
+        user_cannot_change_password: false
+        account_locked: false
+        enabled: true
+        groups:
+          - "Domain Users"
+        state: present
+        path: "CN=Users,DC={{ domain_name }},DC=local"
+      loop: "{{ domain_users }}"
+
+    - name: Create SSH Users group
+      microsoft.ad.group:
+        name: "SSH Users"
+        scope: global
+        category: security
+        state: present
+        path: "CN=Users,DC={{ domain_name }},DC=local"
+
+    - name: Add users to SSH Users group
+      microsoft.ad.group:
+        name: "SSH Users"
+        scope: global
+        members:
+          add:
+            - "{{ item.username }}"
+        state: present
+      loop: "{{ domain_users }}"
+
+    - name: Create Linux Admins group
+      microsoft.ad.group:
+        name: "Linux Admins"
+        scope: global
+        category: security
+        state: present
+        path: "CN=Users,DC={{ domain_name }},DC=local"
+
+    - name: Add specific users to Linux Admins group
+      microsoft.ad.group:
+        name: "Linux Admins"
+        scope: global
+        members:
+          add:
+            - "jdoe"
+            - "asmith"
+        state: present
+
+    - name: Display created users
+      ansible.builtin.debug:
+        msg: "Created domain user: {{ item.username }} ({{ item.firstname }} {{ item.lastname }})"
+      loop: "{{ domain_users }}"
+
+- name: Configure Linux servers for SSH access with AD groups
+  hosts: linux_members
+  become: true
+  tasks:
+    - name: Configure SSH to allow specific AD groups
+      ansible.builtin.blockinfile:
+        path: /etc/ssh/sshd_config
+        block: |
+          # Allow specific Active Directory groups
+          AllowGroups ssh\ users@{{ domain_name }}.local linux\ admins@{{ domain_name }}.local
+        marker: "# {mark} ANSIBLE MANAGED BLOCK - AD Groups"
+        backup: true
+      notify: Restart ssh
+
+    - name: Configure sudo access for Linux Admins group
+      ansible.builtin.lineinfile:
+        path: /etc/sudoers.d/linux_admins
+        line: "%linux\\ admins@{{ domain_name }}.local ALL=(ALL) NOPASSWD:ALL"
+        create: true
+        mode: '0440'
+        validate: 'visudo -cf %s'
+
+    - name: Configure SSSD to use simple names for specific groups
+      ansible.builtin.lineinfile:
+        path: /etc/sssd/sssd.conf
+        regexp: '^use_fully_qualified_names'
+        line: 'use_fully_qualified_names = False'
+        backup: true
+      notify: Restart sssd
+
+    - name: Add simple_allow_groups to SSSD config
+      ansible.builtin.lineinfile:
+        path: /etc/sssd/sssd.conf
+        line: 'simple_allow_groups = ssh users, linux admins'
+        insertafter: 'access_provider = ad'
+        backup: true
+      notify: Restart sssd
+
+    - name: Test SSH configuration
+      ansible.builtin.command: sshd -t
+      register: sshd_test
+      failed_when: sshd_test.rc != 0
+      changed_when: false
+
+  handlers:
+    - name: Restart ssh
+      ansible.builtin.systemd:
+        name: ssh
+        state: restarted
+
+    - name: Restart sssd
+      ansible.builtin.systemd:
+        name: sssd
+        state: restarted
