@@ -1,3 +1,12 @@
+data "openstack_images_image_v2" "windows" {
+  name        = var.windows_image_name
+  most_recent = true
+}
+data "openstack_images_image_v2" "debian" {
+  name        = var.debian_image_name
+  most_recent = true
+}
+
 resource "openstack_compute_instance_v2" "windows" {
   count       = var.windows_count
   name        = "cdt-win-${count.index + 1}"
@@ -10,7 +19,11 @@ resource "openstack_compute_instance_v2" "windows" {
     fixed_ip_v4 = "10.10.10.2${count.index + 1}"
   }
   block_device {
+     uuid                  = data.openstack_images_image_v2.windows.id
+     source_type           = "image"
      volume_size           = 80
+     destination_type      = "volume"
+     delete_on_termination = true
   }
   user_data = file("${path.module}/windows-userdata.ps1")
 
@@ -30,7 +43,11 @@ resource "openstack_compute_instance_v2" "debian" {
     fixed_ip_v4 = "10.10.10.3${count.index + 1}"
   }
   block_device {
+     uuid                  = data.openstack_images_image_v2.debian.id
+     source_type           = "image"
      volume_size           = 80
+     destination_type      = "volume"
+     delete_on_termination = true
   }
   user_data = file("${path.module}/debian-userdata.yaml")
 
