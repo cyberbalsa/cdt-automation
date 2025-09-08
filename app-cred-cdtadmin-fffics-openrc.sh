@@ -1,9 +1,0 @@
-#!/usr/bin/env bash
-
-export OS_AUTH_TYPE=v3applicationcredential
-export OS_AUTH_URL=https://openstack.cyberrange.rit.edu:5000
-export OS_IDENTITY_API_VERSION=3
-export OS_REGION_NAME="CyberRange"
-export OS_INTERFACE=public
-export OS_APPLICATION_CREDENTIAL_ID=c8b642c612e643f8ab9b1a2fe9cc717e
-export OS_APPLICATION_CREDENTIAL_SECRET=5ZU2UrCz9bPj_1v-DgD8Go4DqEGyfBiR-OSvB-jgZncdWiyEjOf5U0HUboewMU3SFlvGM3__Qf4aMu3BACQ7jg
