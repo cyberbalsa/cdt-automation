@@ -37,7 +37,7 @@ fi
 echo "✅ SSH key found"
 
 # Check OpenStack credentials
-if [ ! -f "app-cred-cdtadmin-fffics-openrc.sh" ]; then
+if [ ! -f "app-cred-openrc.sh" ]; then
     echo "⚠️  OpenStack credentials not found"
     echo "   1. Create application credentials in OpenStack dashboard:"
     echo "      https://openstack.cyberrange.rit.edu → Identity → Application credentials"
