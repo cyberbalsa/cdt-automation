@@ -9,7 +9,9 @@ resource "openstack_compute_instance_v2" "windows" {
     uuid = openstack_networking_network_v2.cdt_net.id
     fixed_ip_v4 = "10.10.10.2${count.index + 1}"
   }
-
+  block_device {
+     volume_size           = 80
+  }
   user_data = file("${path.module}/windows-userdata.ps1")
 
   depends_on = [
@@ -27,7 +29,9 @@ resource "openstack_compute_instance_v2" "debian" {
     uuid = openstack_networking_network_v2.cdt_net.id
     fixed_ip_v4 = "10.10.10.3${count.index + 1}"
   }
-
+  block_device {
+     volume_size           = 80
+  }
   user_data = file("${path.module}/debian-userdata.yaml")
 
   depends_on = [
