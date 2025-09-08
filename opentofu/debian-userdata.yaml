@@ -1,6 +1,5 @@
 #cloud-config
 # Debian Trixie user-data script for CDT class
-password: Cyberrange123!
 package_reboot_if_required: true
 package_update: true
 package_upgrade: true
@@ -11,6 +10,7 @@ packages:
   - vim
   - openssh-server
   - tmux
+  - nano
   - screen
   - magic-wormhole
   - net-tools
