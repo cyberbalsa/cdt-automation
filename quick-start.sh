@@ -40,9 +40,9 @@ echo "✅ SSH key found"
 if [ ! -f "app-cred-cdtadmin-fffics-openrc.sh" ]; then
     echo "⚠️  OpenStack credentials not found"
     echo "   1. Create application credentials in OpenStack dashboard:"
-    echo "      https://openstack.cyberrange.rit.edu → Project → API Access"
-    echo "   2. Copy the example file:"
-    echo "      cp app-cred-cdtadmin-fffics-openrc.sh.example app-cred-cdtadmin-fffics-openrc.sh"
+    echo "      https://openstack.cyberrange.rit.edu → Identity → Application credentials"
+    echo "   2. Create a new file called: "
+    echo "              app-cred-openrc.sh"
     echo "   3. Edit it with your actual credentials"
     echo "   4. Also update opentofu/main.tf with the same credentials"
     echo "   5. Run this script again"
@@ -61,7 +61,7 @@ fi
 
 # Source credentials
 echo "🔐 Loading OpenStack credentials..."
-source app-cred-cdtadmin-fffics-openrc.sh
+source app-cred-openrc.sh
 
 # Test OpenStack connectivity
 echo "🔗 Testing OpenStack connectivity..."
