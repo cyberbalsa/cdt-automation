@@ -2,8 +2,8 @@
 variable "network_name" { default = "cdt-net" }
 variable "subnet_cidr" { default = "10.10.10.0/24" }
 variable "router_name" { default = "cdt-router" }
-variable "windows_image_name" { default = "WinSrv2022-20348-2022" }
-variable "debian_image_name" { default = "debian-trixie-amd64-cloud-20250628-05-24" }
+variable "windows_image_name" { default = "WindowsServer2022" }
+variable "debian_image_name" { default = "Ubuntu2404Desktop" }
 variable "flavor_name" { default = "medium" }
 variable "keypair" { default = "coredesktop" }
 variable "security_group" { default = "main-boxes" }
