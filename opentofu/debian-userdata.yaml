@@ -15,6 +15,7 @@ packages:
   - magic-wormhole
   - net-tools
   - htop
+  - xrdp
 
 
 # Create a basic welcome message
@@ -33,6 +34,7 @@ write_files:
 
 # Run commands after boot
 runcmd:
+  - systemctl enable --now xrdp
   - echo "CDT Debian VM setup completed" >> /var/log/cdt-setup.log
   - date >> /var/log/cdt-setup.log
 
