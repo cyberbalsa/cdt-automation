@@ -369,6 +369,4 @@ secedit /export /cfg c:\secpol.cfg
 (gc C:\secpol.cfg).replace("PasswordComplexity = 1", "PasswordComplexity = 0") | Out-File C:\secpol.cfg
 secedit /configure /db c:\windows\security\local.sdb /cfg c:\secpol.cfg /areas SECURITYPOLICY
 rm -force c:\secpol.cfg -confirm:$false
-net user ansible Cyberrange123! /logonpasswordchg:no /active:yes /add
-net localgroup administrators ansible /add
-net localgroup "Remote Management Users" ansible /add
+net user greyteam Cyberrange123! /logonpasswordchg:no /active:yes /add
