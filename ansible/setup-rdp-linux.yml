@@ -1,0 +1,103 @@
+---
+- name: Setup RDP (xrdp) on Linux servers
+  hosts: linux_members
+  become: true
+  gather_facts: true
+  vars:
+    domain_controller_ip: "{{ hostvars[groups['windows_dc'][0]]['internal_ip'] }}"
+  tasks:
+    - name: Install xrdp and dependencies
+      ansible.builtin.apt:
+        name:
+          - xrdp
+          - xorgxrdp
+        state: present
+        update_cache: true
+
+    - name: Add xrdp user to ssl-cert group
+      ansible.builtin.user:
+        name: xrdp
+        groups: ssl-cert
+        append: true
+
+    - name: Configure xrdp to use local session
+      ansible.builtin.lineinfile:
+        path: /etc/xrdp/startwm.sh
+        insertbefore: '^test -x /etc/X11/Xsession'
+        line: 'unset DBUS_SESSION_BUS_ADDRESS'
+        backup: true
+
+    - name: Configure xrdp to start LXQT session
+      ansible.builtin.lineinfile:
+        path: /etc/xrdp/startwm.sh
+        insertbefore: '^test -x /etc/X11/Xsession'
+        line: 'startlxqt'
+        backup: true
+
+    - name: Configure xrdp.ini for better performance
+      ansible.builtin.lineinfile:
+        path: /etc/xrdp/xrdp.ini
+        regexp: "{{ item.regexp }}"
+        line: "{{ item.line }}"
+        backup: true
+      loop:
+        - { regexp: '^max_bpp=', line: 'max_bpp=128' }
+        - { regexp: '^xserverbpp=', line: 'xserverbpp=128' }
+      notify: Restart xrdp
+
+    - name: Create .xsession file for domain users template
+      ansible.builtin.copy:
+        dest: /etc/skel/.xsession
+        mode: '0644'
+        content: |
+          #!/bin/bash
+          unset DBUS_SESSION_BUS_ADDRESS
+          unset XDG_RUNTIME_DIR
+          startlxqt
+
+    - name: Configure polkit to allow colord for domain users
+      ansible.builtin.copy:
+        dest: /etc/polkit-1/localauthority/50-local.d/45-allow-colord.pkla
+        mode: '0644'
+        content: |
+          [Allow Colord all Users]
+          Identity=unix-user:*
+          Action=org.freedesktop.color-manager.create-device;org.freedesktop.color-manager.create-profile;org.freedesktop.color-manager.delete-device;org.freedesktop.color-manager.delete-profile;org.freedesktop.color-manager.modify-device;org.freedesktop.color-manager.modify-profile
+          ResultAny=no
+          ResultInactive=no
+          ResultActive=yes
+
+    - name: Enable and start xrdp service
+      ansible.builtin.systemd:
+        name: xrdp
+        enabled: true
+        state: started
+
+    - name: Check if UFW is installed
+      ansible.builtin.command: which ufw
+      register: ufw_check
+      failed_when: false
+      changed_when: false
+
+    - name: Allow RDP through UFW firewall
+      community.general.ufw:
+        rule: allow
+        port: '3389'
+        proto: tcp
+        comment: 'Allow RDP'
+      when: ufw_check.rc == 0
+
+    - name: Verify xrdp is running
+      ansible.builtin.systemd:
+        name: xrdp
+      register: xrdp_status
+
+    - name: Display xrdp status
+      ansible.builtin.debug:
+        msg: "xrdp service is {{ xrdp_status.status.ActiveState }} on {{ ansible_hostname }}"
+
+  handlers:
+    - name: Restart xrdp
+      ansible.builtin.systemd:
+        name: xrdp
+        state: restarted

@@ -7,22 +7,30 @@
       ansible.builtin.debug:
         msg:
           - "Starting CDT Domain Setup"
-          - "Domain Controller: 10.10.10.21"
-          - "Windows Members: 10.10.10.22, 10.10.10.23"
-          - "Linux Members: 10.10.10.31, 10.10.10.32, 10.10.10.33"
+          - "Domain Controller: {{ hostvars[groups['windows'][0]]['internal_ip'] }}"
+          - "Windows Members: {{ groups['windows_members'] | map('extract', hostvars, 'internal_ip') | join(', ') }}"
+          - "Linux Members: {{ groups['linux_members'] | map('extract', hostvars, 'internal_ip') | join(', ') }}"
           - "Domain: CDT.local"
-
 - name: Setup Domain Controller
   import_playbook: setup-domain-controller.yml
 
 - name: Join Windows Servers to Domain
   import_playbook: join-windows-domain.yml
 
+- name: Activate Windows using KMS
+  import_playbook: activate-windows-kms.yml
+
 - name: Join Linux Servers to Domain
   import_playbook: join-linux-domain.yml
 
 - name: Create Domain Users
   import_playbook: create-domain-users.yml
+
+- name: Setup RDP on Linux Servers
+  import_playbook: setup-rdp-linux.yml
+
+- name: Setup RDP on Windows Servers
+  import_playbook: setup-rdp-windows.yml
 
 - name: Final verification and summary
   hosts: localhost
@@ -33,9 +41,9 @@
         msg:
           - "CDT Domain setup completed successfully!"
           - ""
-          - "Domain Controller: 10.10.10.21 (CDT.local)"
-          - "Windows Members: 10.10.10.22, 10.10.10.23"
-          - "Linux Members: 10.10.10.31, 10.10.10.32, 10.10.10.33"
+          - "Domain Controller: {{ hostvars[groups['windows'][0]]['internal_ip'] }} (CDT.local)"
+          - "Windows Members: {{ groups['windows_members'] | map('extract', hostvars, 'internal_ip') | join(', ') }}"
+          - "Linux Members: {{ groups['linux_members'] | map('extract', hostvars, 'internal_ip') | join(', ') }}"
           - ""
           - "Created Users:"
           - "  - jdoe (John Doe)"
@@ -49,7 +57,14 @@
           - "  - Linux Admins (jdoe, asmith) have sudo access"
           - "  - Password authentication enabled for domain users"
           - ""
+          - "RDP Access:"
+          - "  - Linux boxes: RDP enabled on port 3389 (xrdp with LXQT)"
+          - "  - Windows boxes: RDP enabled on port 3389"
+          - "  - Domain users can RDP using: username@CDT.local"
+          - "  - Use external IPs to connect from outside the network"
+          - ""
           - "Next Steps:"
-          - "  1. Test SSH: ssh jdoe@CDT.local@10.10.10.31"
-          - "  2. Verify domain join: realm list (on Linux boxes)"
-          - "  3. Check Windows domain membership in Computer Properties"
+          - "  1. Test SSH: ssh jdoe@CDT.local@{{ hostvars[groups['linux_members'][0]]['internal_ip'] }}"
+          - "  2. Test RDP: Connect to {{ hostvars[groups['linux_members'][0]]['ansible_host'] }}:3389"
+          - "  3. Verify domain join: realm list (on Linux boxes)"
+          - "  4. Check Windows domain membership in Computer Properties"

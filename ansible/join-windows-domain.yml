@@ -3,7 +3,7 @@
   hosts: windows_members
   gather_facts: false
   vars:
-    domain_controller_ip: "10.10.10.21"
+    domain_controller_ip: "{{ hostvars[groups['windows_dc'][0]]['internal_ip'] }}"
   tasks:
     - name: Set DNS server to domain controller
       ansible.windows.win_dns_client:

@@ -3,7 +3,7 @@
   hosts: linux_members
   become: true
   vars:
-    domain_controller_ip: "10.10.10.21"
+    domain_controller_ip: "{{ hostvars[groups['windows_dc'][0]]['internal_ip'] }}"
   tasks:
     - name: Install required packages for domain joining
       ansible.builtin.apt:
@@ -29,7 +29,7 @@
         backup: true
 
     - name: Configure Kerberos realm
-      ansible.builtin.template:
+      ansible.builtin.copy:
         dest: /etc/krb5.conf
         mode: '0644'
         content: |
@@ -42,8 +42,8 @@
           default_realm = {{ domain_name | upper }}.LOCAL
           dns_lookup_realm = false
           dns_lookup_kdc = true
-          ticket_lifetime = 24h
-          renew_lifetime = 7d
+          ticket_lifetime = {{ kerberos_ticket_lifetime }}
+          renew_lifetime = {{ kerberos_renew_lifetime }}
           forwardable = true
 
           [realms]
@@ -74,7 +74,7 @@
       failed_when: false
 
     - name: Configure SSSD for domain authentication
-      ansible.builtin.template:
+      ansible.builtin.copy:
         dest: /etc/sssd/sssd.conf
         mode: '0600'
         content: |
@@ -84,13 +84,13 @@
           services = nss, pam
 
           [domain/{{ domain_name }}.local]
-          default_shell = /bin/bash
+          default_shell = {{ sssd_default_shell }}
           krb5_store_password_if_offline = True
           cache_credentials = True
           krb5_realm = {{ domain_name | upper }}.LOCAL
           realmd_tags = manages-system joined-with-adcli
           id_provider = ad
-          fallback_homedir = /home/%u@%d
+          fallback_homedir = {{ sssd_fallback_homedir }}
           ad_domain = {{ domain_name }}.local
           use_fully_qualified_names = True
           ldap_id_mapping = True
@@ -101,7 +101,7 @@
     - name: Configure PAM for automatic home directory creation
       ansible.builtin.lineinfile:
         path: /etc/pam.d/common-session
-        line: "session required pam_mkhomedir.so skel=/etc/skel umask=077"
+        line: "session required pam_mkhomedir.so skel={{ pam_mkhomedir_skel }} umask={{ pam_mkhomedir_umask }}"
         insertafter: "session.*pam_unix.so"
 
     - name: Configure SSH to allow domain users

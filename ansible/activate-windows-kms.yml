@@ -1,0 +1,122 @@
+---
+- name: Activate Windows using KMS
+  hosts: windows:windows_members
+  gather_facts: false
+  vars:
+    kms_domain: main.ad.rit.edu
+    kms_servers:
+      - itslic01a.ad.rit.edu
+      - itslic02a.ad.rit.edu
+      - itslic02b.ad.rit.edu
+      - kms01a.ad.rit.edu
+      - itslic01b.ad.rit.edu
+    kms_port: 1688
+  tasks:
+    - name: Rename main network interface to Ethernet
+      ansible.windows.win_shell: |
+        $adapter = Get-NetAdapter | Where-Object {$_.Status -eq "Up"} | Select-Object -First 1
+        if ($adapter.Name -ne "Ethernet") {
+          Rename-NetAdapter -Name $adapter.Name -NewName "Ethernet"
+          Write-Output "Renamed $($adapter.Name) to Ethernet"
+        } else {
+          Write-Output "Interface already named Ethernet"
+        }
+      register: rename_result
+      changed_when: "'Renamed' in rename_result.stdout"
+
+    - name: Display interface rename result
+      ansible.builtin.debug:
+        msg: "{{ rename_result.stdout_lines }}"
+
+    - name: Query DNS SRV records for KMS servers
+      ansible.windows.win_shell: |
+        $srv = "_vlmcs._tcp.{{ kms_domain }}"
+        try {
+          $records = Resolve-DnsName -Name $srv -Type SRV -ErrorAction Stop
+          Write-Output "Found $($records.Count) KMS SRV records:"
+          $records | ForEach-Object { Write-Output "  $($_.NameTarget):$($_.Port)" }
+        } catch {
+          Write-Output "Failed to resolve SRV records: $_"
+        }
+      register: srv_query
+      changed_when: false
+      failed_when: false
+
+    - name: Display SRV record query results
+      ansible.builtin.debug:
+        msg: "{{ srv_query.stdout_lines }}"
+
+    - name: Test connectivity to each KMS server
+      ansible.windows.win_shell: |
+        $results = @()
+        $servers = @({{ kms_servers | map('regex_replace', '^(.*)$', '"\1"') | join(', ') }})
+        foreach ($server in $servers) {
+          try {
+            $connection = Test-NetConnection -ComputerName $server -Port {{ kms_port }} -InformationLevel Quiet -WarningAction SilentlyContinue
+            if ($connection) {
+              $results += "${server}: Reachable"
+            } else {
+              $results += "${server}: Not reachable"
+            }
+          } catch {
+            $results += "${server}: Error - $_"
+          }
+        }
+        $results | ForEach-Object { Write-Output $_ }
+      register: connectivity_test
+      changed_when: false
+
+    - name: Display connectivity test results
+      ansible.builtin.debug:
+        msg: "{{ connectivity_test.stdout_lines }}"
+
+    - name: Set KMS server to domain (will use SRV records)
+      ansible.windows.win_shell: |
+        cscript //nologo C:\Windows\System32\slmgr.vbs /skms {{ kms_domain }}
+      register: kms_set_result
+      changed_when: true
+
+    - name: Display KMS server configuration result
+      ansible.builtin.debug:
+        msg: "{{ kms_set_result.stdout_lines }}"
+
+    - name: Activate Windows
+      ansible.windows.win_shell: |
+        cscript //nologo C:\Windows\System32\slmgr.vbs /ato
+      register: activation_result
+      changed_when: true
+      failed_when: false
+
+    - name: Display activation result
+      ansible.builtin.debug:
+        msg: "{{ activation_result.stdout_lines }}"
+
+    - name: Try individual KMS servers if domain activation failed
+      ansible.windows.win_shell: |
+        $server = "{{ item }}"
+        Write-Output "Trying KMS server: $server"
+        cscript //nologo C:\Windows\System32\slmgr.vbs /skms ${server}:{{ kms_port }}
+        cscript //nologo C:\Windows\System32\slmgr.vbs /ato
+      register: individual_activation
+      loop: "{{ kms_servers }}"
+      when: activation_result.rc != 0
+      failed_when: false
+      changed_when: "'successfully' in individual_activation.stdout.lower()"
+
+    - name: Display individual server activation attempts
+      ansible.builtin.debug:
+        msg: "{{ item.stdout_lines }}"
+      loop: "{{ individual_activation.results }}"
+      when: activation_result.rc != 0 and individual_activation.results is defined
+      loop_control:
+        label: "{{ item.item | default('N/A') }}"
+
+    - name: Verify activation status
+      ansible.windows.win_shell: |
+        cscript //nologo C:\Windows\System32\slmgr.vbs /dli
+      register: license_info
+      changed_when: false
+
+    - name: Display license information
+      ansible.builtin.debug:
+        msg: "{{ license_info.stdout_lines }}"

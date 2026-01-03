@@ -2,28 +2,6 @@
 - name: Create domain users and configure access
   hosts: windows_dc
   gather_facts: false
-  vars:
-    domain_users:
-      - username: "jdoe"
-        firstname: "John"
-        lastname: "Doe"
-        password: "UserPass123!"
-      - username: "asmith"
-        firstname: "Alice"
-        lastname: "Smith"
-        password: "UserPass123!"
-      - username: "bwilson"
-        firstname: "Bob"
-        lastname: "Wilson"
-        password: "UserPass123!"
-      - username: "mjohnson"
-        firstname: "Mary"
-        lastname: "Johnson"
-        password: "UserPass123!"
-      - username: "dlee"
-        firstname: "David"
-        lastname: "Lee"
-        password: "UserPass123!"
   tasks:
     - name: Create domain users
       microsoft.ad.user:
@@ -33,10 +11,10 @@
         password: "{{ item.password }}"
         password_never_expires: true
         user_cannot_change_password: false
-        account_locked: false
         enabled: true
         groups:
-          - "Domain Users"
+          set:
+            - "Domain Users"
         state: present
         path: "CN=Users,DC={{ domain_name }},DC=local"
       loop: "{{ domain_users }}"
@@ -72,9 +50,7 @@
         name: "Linux Admins"
         scope: global
         members:
-          add:
-            - "jdoe"
-            - "asmith"
+          add: "{{ linux_admin_users }}"
         state: present
 
     - name: Display created users
@@ -90,8 +66,11 @@
       ansible.builtin.blockinfile:
         path: /etc/ssh/sshd_config
         block: |
-          # Allow specific Active Directory groups
-          AllowGroups ssh\ users@{{ domain_name }}.local linux\ admins@{{ domain_name }}.local
+          # Allow specific Active Directory groups and local admin user
+          AllowGroups cyberrange sudo {{ ssh_allowed_groups |
+                                         map('regex_replace', '^(.*)$', '\\1@' + domain_name + '.local') |
+                                         map('regex_replace', ' ', '\\ ') |
+                                         join(' ') }}
         marker: "# {mark} ANSIBLE MANAGED BLOCK - AD Groups"
         backup: true
       notify: Restart ssh
@@ -115,7 +94,7 @@
     - name: Add simple_allow_groups to SSSD config
       ansible.builtin.lineinfile:
         path: /etc/sssd/sssd.conf
-        line: 'simple_allow_groups = ssh users, linux admins'
+        line: 'simple_allow_groups = {{ ssh_allowed_groups | join(", ") }}'
         insertafter: 'access_provider = ad'
         backup: true
       notify: Restart sssd

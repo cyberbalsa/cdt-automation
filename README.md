@@ -111,6 +111,42 @@ Edit `opentofu/variables.tf` to modify:
 - Instance flavors (sizes)
 - Network configuration
 - SSH key name
+- Custom hostnames for VMs
+
+#### Setting Custom Hostnames
+
+By default, VMs are named with auto-generated names like `cdt-win-1`, `cdt-win-2`, etc. You can customize these names using the `windows_hostnames` and `debian_hostnames` variables.
+
+**Option 1: Edit variables.tf directly**
+```hcl
+variable "windows_hostnames" {
+  type    = list(string)
+  default = ["dc01", "fs01", "web01"]
+}
+
+variable "debian_hostnames" {
+  type    = list(string)
+  default = ["jumphost", "mail-server", "db-server", "web-server"]
+}
+```
+
+**Option 2: Mix custom and auto-generated names**
+```hcl
+# Only customize first 2 Windows VMs
+windows_count = 5
+windows_hostnames = ["dc01", "dc02"]
+# Result: dc01, dc02, cdt-win-3, cdt-win-4, cdt-win-5
+
+# Leave all Linux VMs with default names
+debian_count = 4
+debian_hostnames = []
+# Result: cdt-debian-1, cdt-debian-2, cdt-debian-3, cdt-debian-4
+```
+
+**Important Notes:**
+- If you provide fewer hostnames than the count, remaining VMs use auto-generated names
+- Empty list `[]` (default) means all VMs use auto-generated names
+- Hostname must match the number of VMs or be shorter (not longer)
 
 ### Step 4: Deploy Infrastructure
 ```bash
@@ -126,18 +162,104 @@ tofu plan
 tofu apply
 ```
 
-### Step 5: Configure Servers with Ansible
+### Step 5: Generate Ansible Inventory
 ```bash
-# copy ansible directory to a remote server inside the network, use the 4th debian server for this. 
+# Run the import script to automatically generate inventory from OpenTofu outputs
+python3 import-tofu-to-ansible.py
+
+# This creates ansible/inventory.ini with all VM details
+```
+
+### Step 6: Configure Servers with Ansible
+```bash
+# copy ansible directory to a remote server inside the network, use the 4th debian server for this.
 # ssh -J sshproxy@ssh.cyberrange.rit.edu debian@100.65.X.X
 sudo apt install ansible
 cd ansible
 
-# Update inventory with actual IP addresses (if different)
-vim inventory.ini
-
+# The inventory.ini was already generated in Step 5
 # Run the complete setup
 ansible-playbook -i inventory.ini site.yml
+```
+
+## 🔄 Utility Scripts
+
+### Automatic Inventory Generation
+
+The `import-tofu-to-ansible.py` script automatically generates the Ansible inventory from OpenTofu outputs.
+
+**Usage:**
+```bash
+python3 import-tofu-to-ansible.py [tofu_dir] [ansible_dir] [inventory_filename]
+```
+
+**What it does:**
+1. Reads OpenTofu outputs (VM names, floating IPs, internal IPs)
+2. Generates `inventory.ini` with proper groups
+3. Creates dynamic groups:
+   - `[windows_dc]` - First Windows VM (Domain Controller)
+   - `[windows_members]` - Remaining Windows VMs
+   - `[linux_members]` - All Linux VMs
+4. Adds connection variables (passwords, WinRM config, etc.)
+
+**When to run:**
+- After initial `tofu apply`
+- After changing VM counts (`tofu apply` with new variables)
+- After rebuilding infrastructure
+
+### Rebuild Individual VMs
+
+The `rebuild-vm.sh` script allows you to rebuild and reconfigure a single VM without affecting others.
+
+**Usage:**
+```bash
+./rebuild-vm.sh <internal_ip or floating_ip>
+```
+
+**Examples:**
+```bash
+# Rebuild using internal IP
+./rebuild-vm.sh 10.10.10.21
+
+# Rebuild using floating IP
+./rebuild-vm.sh 100.65.4.55
+```
+
+**What it does:**
+1. **Finds the VM** - Searches OpenTofu state for the provided IP
+2. **Confirms rebuild** - Asks for confirmation before proceeding
+3. **Taints resource** - Marks the VM for rebuild in OpenTofu
+4. **Rebuilds VM** - Destroys and recreates only that specific VM
+5. **Regenerates inventory** - Updates `inventory.ini` automatically
+6. **Waits for boot** - Smart timeout based on OS:
+   - Windows: 15 minutes (longer boot time)
+   - Linux: 5 minutes
+7. **Tests connectivity** - Uses `win_ping` for Windows, `ping` for Linux
+8. **Runs playbooks** - Automatically configures based on VM role:
+   - Domain Controller: `setup-domain-controller.yml`
+   - Windows Members: `join-windows-domain.yml`
+   - Linux Members: `join-linux-domain.yml` + `create-domain-users.yml`
+
+**Use Cases:**
+- VM is corrupted or misconfigured
+- Testing configuration changes
+- Domain controller issues
+- Quick reset of a single server
+
+**Example Output:**
+```bash
+$ ./rebuild-vm.sh 10.10.10.21
+[INFO] Target IP: 10.10.10.21
+[INFO] Fetching OpenTofu state...
+[SUCCESS] Found VM: cdt-win-1 (type: windows, index: 0)
+[WARNING] About to rebuild: cdt-win-1
+Are you sure you want to rebuild this VM? (yes/no): yes
+[INFO] Rebuilding VM with OpenTofu...
+[INFO] Waiting for VM to come online...
+[INFO] Detected Windows VM - using extended timeout (15 minutes)
+[SUCCESS] VM is online and reachable!
+[INFO] Running playbook: setup-domain-controller.yml
+[SUCCESS] VM Rebuild and Configuration Complete!
 ```
 
 ## 📖 Detailed Learning Guide
@@ -184,7 +306,7 @@ Ansible automates server configuration using playbooks written in YAML.
 
 #### Key Files in `/ansible/`:
 - **`inventory.ini`**: Server lists and connection details
-- **`site.yml`**: Main orchestration playbook
+- **`site.yml`**: Main orchestration playbook that imports all other playbooks
 - **`setup-domain-controller.yml`**: Windows AD setup
 - **`join-windows-domain.yml`**: Windows domain joining
 - **`join-linux-domain.yml`**: Linux domain integration
@@ -212,7 +334,13 @@ Ansible automates server configuration using playbooks written in YAML.
     name: "{{ item.username }}"
     password: "{{ item.password | password_hash('sha512') }}"
   loop: "{{ domain_users }}"
+
+# Importing Playbooks (in site.yml)
+- name: Setup Component
+  import_playbook: setup-component.yml
 ```
+
+**Important**: When creating new playbooks, add them to `site.yml` using `import_playbook` so they execute as part of the complete setup workflow.
 
 ## 🔧 Configuration Management
 
@@ -246,6 +374,38 @@ The project creates:
 - **4 Linux Servers** (configurable via `debian_count`)
 - **Floating IPs** for external access
 - **Cloud-init** for initial configuration
+
+#### Custom VM Hostnames
+You can customize VM names using the `windows_hostnames` and `debian_hostnames` list variables:
+
+```hcl
+# In variables.tf or terraform.tfvars
+variable "windows_hostnames" {
+  type        = list(string)
+  default     = ["dc01", "web01", "app01"]
+  description = "Custom hostnames for Windows VMs"
+}
+
+variable "debian_hostnames" {
+  type        = list(string)
+  default     = ["jumphost", "db01", "cache01", "monitor01"]
+  description = "Custom hostnames for Debian VMs"
+}
+```
+
+The implementation uses conditional logic in `instances.tf`:
+```hcl
+resource "openstack_compute_instance_v2" "windows" {
+  count = var.windows_count
+  name  = length(var.windows_hostnames) > count.index ? var.windows_hostnames[count.index] : "cdt-win-${count.index + 1}"
+  # ... rest of configuration
+}
+```
+
+This allows you to:
+- Provide a full list of custom names
+- Provide partial names (remaining VMs use auto-generated names)
+- Use empty list for all auto-generated names (default behavior)
 
 ## 🎓 Educational Exercises
 

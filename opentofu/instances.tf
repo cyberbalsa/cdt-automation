@@ -8,22 +8,23 @@ data "openstack_images_image_v2" "debian" {
 }
 
 resource "openstack_compute_instance_v2" "windows" {
-  count       = var.windows_count
-  name        = "cdt-win-${count.index + 1}"
-  image_name  = var.windows_image_name
-  flavor_name = var.flavor_name
-  key_pair    = var.keypair
+  count           = var.windows_count
+  name            = length(var.windows_hostnames) > count.index ? var.windows_hostnames[count.index] : "cdt-win-${count.index + 1}"
+  image_name      = var.windows_image_name
+  flavor_name     = var.flavor_name
+  key_pair        = var.keypair
+  security_groups = [openstack_networking_secgroup_v2.windows_sg.name]
 
   network {
-    uuid = openstack_networking_network_v2.cdt_net.id
+    uuid        = openstack_networking_network_v2.cdt_net.id
     fixed_ip_v4 = "10.10.10.2${count.index + 1}"
   }
   block_device {
-     uuid                  = data.openstack_images_image_v2.windows.id
-     source_type           = "image"
-     volume_size           = 80
-     destination_type      = "volume"
-     delete_on_termination = true
+    uuid                  = data.openstack_images_image_v2.windows.id
+    source_type           = "image"
+    volume_size           = 80
+    destination_type      = "volume"
+    delete_on_termination = true
   }
   user_data = file("${path.module}/windows-userdata.ps1")
 
@@ -32,22 +33,23 @@ resource "openstack_compute_instance_v2" "windows" {
 }
 
 resource "openstack_compute_instance_v2" "debian" {
-  count       = var.debian_count
-  name        = "cdt-debian-${count.index + 1}"
-  image_name  = var.debian_image_name
-  flavor_name = var.flavor_name
-  key_pair    = var.keypair
+  count           = var.debian_count
+  name            = length(var.debian_hostnames) > count.index ? var.debian_hostnames[count.index] : "cdt-debian-${count.index + 1}"
+  image_name      = var.debian_image_name
+  flavor_name     = var.flavor_name
+  key_pair        = var.keypair
+  security_groups = [openstack_networking_secgroup_v2.linux_sg.name]
 
   network {
-    uuid = openstack_networking_network_v2.cdt_net.id
+    uuid        = openstack_networking_network_v2.cdt_net.id
     fixed_ip_v4 = "10.10.10.3${count.index + 1}"
   }
   block_device {
-     uuid                  = data.openstack_images_image_v2.debian.id
-     source_type           = "image"
-     volume_size           = 80
-     destination_type      = "volume"
-     delete_on_termination = true
+    uuid                  = data.openstack_images_image_v2.debian.id
+    source_type           = "image"
+    volume_size           = 80
+    destination_type      = "volume"
+    delete_on_termination = true
   }
   user_data = file("${path.module}/debian-userdata.yaml")
 

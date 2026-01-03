@@ -1,0 +1,77 @@
+---
+# ==============================================================================
+# Domain Configuration
+# ==============================================================================
+domain_name: "CDT"
+domain_admin_user: "Administrator"
+domain_admin_password: "Cyberrange123!"
+
+# ==============================================================================
+# DNS Configuration
+# ==============================================================================
+dns_forwarders:
+  - "129.21.3.17"
+  - "129.21.4.18"
+
+# ==============================================================================
+# Active Directory Organizational Units
+# ==============================================================================
+organizational_units:
+  - "Users"
+  - "Computers"
+  - "Linux Servers"
+
+# ==============================================================================
+# Domain Users Configuration
+# ==============================================================================
+domain_users:
+  - username: "jdoe"
+    firstname: "John"
+    lastname: "Doe"
+    password: "UserPass123!"
+  - username: "asmith"
+    firstname: "Alice"
+    lastname: "Smith"
+    password: "UserPass123!"
+  - username: "bwilson"
+    firstname: "Bob"
+    lastname: "Wilson"
+    password: "UserPass123!"
+  - username: "mjohnson"
+    firstname: "Mary"
+    lastname: "Johnson"
+    password: "UserPass123!"
+  - username: "dlee"
+    firstname: "David"
+    lastname: "Lee"
+    password: "UserPass123!"
+
+# Domain groups to create for Linux access
+linux_admin_users:
+  - "jdoe"
+  - "asmith"
+
+# ==============================================================================
+# Kerberos Configuration
+# ==============================================================================
+kerberos_ticket_lifetime: "24h"
+kerberos_renew_lifetime: "7d"
+
+# ==============================================================================
+# Linux PAM Configuration
+# ==============================================================================
+pam_mkhomedir_skel: "/etc/skel"
+pam_mkhomedir_umask: "077"
+
+# ==============================================================================
+# SSSD Configuration
+# ==============================================================================
+sssd_fallback_homedir: "/home/%u@%d"
+sssd_default_shell: "/bin/bash"
+
+# ==============================================================================
+# SSH Configuration
+# ==============================================================================
+ssh_allowed_groups:
+  - "ssh users"
+  - "linux admins"
