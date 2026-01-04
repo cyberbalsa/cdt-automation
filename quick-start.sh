@@ -238,36 +238,72 @@ fi
 echo ""
 echo "🔐 Checking OpenStack credentials..."
 
-# Check OpenStack credentials
+# Auto-detect and rename credential file
+CRED_FILES=(app-cred*openrc.sh)
+if [ -f "${CRED_FILES[0]}" ] && [ "${CRED_FILES[0]}" != "app-cred-openrc.sh" ] && [ "${CRED_FILES[0]}" != "app-cred*openrc.sh" ]; then
+    echo "📥 Found OpenStack credential file: ${CRED_FILES[0]}"
+    echo "   Renaming to: app-cred-openrc.sh"
+    mv "${CRED_FILES[0]}" app-cred-openrc.sh
+    echo "✅ Credential file renamed successfully"
+    echo ""
+fi
+
+# Check if app-cred-openrc.sh exists
 if [ ! -f "app-cred-openrc.sh" ]; then
-    echo "⚠️  OpenStack credentials not found"
-    echo "   1. Create application credentials in OpenStack dashboard:"
-    echo "      https://openstack.cyberrange.rit.edu → Identity → Application Credentials"
-    echo "   2. Create a new file called: app-cred-openrc.sh"
-    echo "   3. Edit it with your actual credentials"
-    echo "   4. Also update opentofu/main.tf with the same credentials"
-    echo "   5. Run this script again"
+    echo "❌ OpenStack credentials file not found"
+    echo ""
+    echo "   📖 Setting up credentials (EASY METHOD):"
+    echo ""
+    echo "   1. Go to OpenStack Dashboard:"
+    echo "      https://openstack.cyberrange.rit.edu"
+    echo ""
+    echo "   2. Navigate to: Identity → Application Credentials"
+    echo ""
+    echo "   3. Click 'Create Application Credential'"
+    echo "      - Name: cdt-automation (or any name)"
+    echo "      - Click 'Create Application Credential'"
+    echo ""
+    echo "   4. On the success page, click 'Download openrc file'"
+    echo "      (This downloads a shell script with your credentials)"
+    echo ""
+    echo "   5. Move the downloaded file to this project directory:"
+    echo "      mv ~/Downloads/app-cred-*-openrc.sh ."
+    echo ""
+    echo "   6. Run this script again: ./quick-start.sh"
+    echo "      (The script will auto-detect and rename it)"
+    echo ""
+    echo "   NOTE: Credential files are gitignored and never committed"
+    echo ""
     exit 1
 fi
 
-# Check if main.tf still has placeholder values
-if grep -q "YOUR_APPLICATION_CREDENTIAL" opentofu/main.tf; then
-    echo "⚠️  OpenTofu configuration needs your credentials"
-    echo "   Edit opentofu/main.tf and replace:"
-    echo "   - YOUR_APPLICATION_CREDENTIAL_ID_HERE"
-    echo "   - YOUR_APPLICATION_CREDENTIAL_SECRET_HERE"
-    echo "   With your actual credentials from OpenStack dashboard"
-    exit 1
-fi
+# Make sure the file is executable
+chmod +x app-cred-openrc.sh
 
-# Source credentials
-echo "Loading OpenStack credentials..."
+# Source the credentials to set environment variables
+echo "Loading OpenStack credentials from app-cred-openrc.sh..."
 source app-cred-openrc.sh
-echo "✅ OpenStack credentials loaded"
+
+# Verify that required environment variables are set
+if [ -z "$OS_APPLICATION_CREDENTIAL_ID" ] || [ -z "$OS_APPLICATION_CREDENTIAL_SECRET" ]; then
+    echo "❌ OpenStack credentials file is missing required variables"
+    echo ""
+    echo "   The file app-cred-openrc.sh exists but doesn't set:"
+    echo "   - OS_APPLICATION_CREDENTIAL_ID"
+    echo "   - OS_APPLICATION_CREDENTIAL_SECRET"
+    echo ""
+    echo "   Please download the correct file from OpenStack Dashboard:"
+    echo "   Identity → Application Credentials → Download openrc file"
+    echo ""
+    exit 1
+fi
+
+echo "✅ OpenStack credentials loaded successfully"
 
 # Test OpenStack connectivity
 echo ""
 echo "🔗 Testing OpenStack connectivity..."
+
 if ! command -v openstack &> /dev/null; then
     echo "⚠️  OpenStack CLI not installed, skipping connectivity and key import test"
     echo "   Install with: sudo apt install python3-openstackclient (Debian/Ubuntu)"
@@ -405,6 +441,25 @@ else
 fi
 
 echo ""
+echo "🔧 Initializing OpenTofu..."
+echo ""
+
+# Change to opentofu directory and run init
+cd opentofu
+
+if tofu init; then
+    echo ""
+    echo "✅ OpenTofu initialized successfully"
+else
+    echo ""
+    echo "❌ OpenTofu initialization failed"
+    echo "   You may need to run 'tofu init' manually in the opentofu directory"
+fi
+
+# Return to project root
+cd ..
+
+echo ""
 echo "═══════════════════════════════════════════════════════════"
 echo "🎯 All prerequisites met! You're ready to deploy."
 echo "═══════════════════════════════════════════════════════════"
@@ -425,16 +480,17 @@ if command -v ansible-lint &> /dev/null; then
 fi
 echo ""
 echo "🚀 Next steps:"
-echo "   1. Review and customize variables:"
+echo "   1. Review and customize variables (optional):"
 echo "      vim opentofu/variables.tf"
 echo ""
 echo "   2. (Optional) Run linters to check for issues:"
 echo "      ./check.sh"
 echo ""
-echo "   3. Initialize and deploy infrastructure:"
+echo "   3. Deploy infrastructure:"
+echo "      source app-cred-openrc.sh  # Load credentials"
 echo "      cd opentofu"
-echo "      tofu init"
-echo "      tofu apply"
+echo "      tofu plan                   # Preview changes"
+echo "      tofu apply                  # Deploy infrastructure"
 echo ""
 echo "   4. Generate Ansible inventory:"
 echo "      cd .."
@@ -446,7 +502,8 @@ echo "      ansible-playbook -i inventory.ini site.yml"
 echo ""
 echo "📖 For detailed instructions, see README.md"
 echo ""
-echo "💡 Tip: Run 'tofu plan' first to preview changes before 'tofu apply'"
+echo "💡 Tip: Always run 'source app-cred-openrc.sh' before tofu commands"
+echo "💡 Tip: OpenTofu is already initialized - you can go straight to 'tofu plan'"
 echo "💡 Tip: Run './check.sh' anytime to lint your Terraform and Ansible code"
 echo ""
 echo "Happy learning! 🎓"

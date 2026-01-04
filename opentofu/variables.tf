@@ -1,4 +1,6 @@
 # OpenTofu variables for OpenStack project
+# Note: OpenStack credentials are loaded from environment variables via app-cred-openrc.sh
+
 variable "network_name" {
   type    = string
   default = "cdt-net"

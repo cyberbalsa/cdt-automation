@@ -54,3 +54,7 @@ id_ed25519*
 .env
 .env.local
 .env.*.local
+
+# OpenStack credentials (downloaded from OpenStack Dashboard)
+# Pattern matches: app-cred-USERNAME-PROJECT-openrc.sh, app-cred-openrc.sh, etc.
+app-cred*openrc.sh
