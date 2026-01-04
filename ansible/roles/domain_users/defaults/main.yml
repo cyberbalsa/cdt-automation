@@ -1,0 +1,3 @@
+---
+# Default variables for domain_users role
+# Override these in group_vars/all.yml

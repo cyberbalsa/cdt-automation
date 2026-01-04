@@ -1,0 +1,55 @@
+---
+- name: Create domain users
+  microsoft.ad.user:
+    name: "{{ item.username }}"
+    firstname: "{{ item.firstname }}"
+    surname: "{{ item.lastname }}"
+    password: "{{ item.password }}"
+    password_never_expires: true
+    user_cannot_change_password: false
+    enabled: true
+    groups:
+      set:
+        - "Domain Users"
+    state: present
+    path: "CN=Users,DC={{ domain_name }},DC=local"
+  loop: "{{ domain_users }}"
+
+- name: Create SSH Users group
+  microsoft.ad.group:
+    name: "SSH Users"
+    scope: global
+    category: security
+    state: present
+    path: "CN=Users,DC={{ domain_name }},DC=local"
+
+- name: Add users to SSH Users group
+  microsoft.ad.group:
+    name: "SSH Users"
+    scope: global
+    members:
+      add:
+        - "{{ item.username }}"
+    state: present
+  loop: "{{ domain_users }}"
+
+- name: Create Linux Admins group
+  microsoft.ad.group:
+    name: "Linux Admins"
+    scope: global
+    category: security
+    state: present
+    path: "CN=Users,DC={{ domain_name }},DC=local"
+
+- name: Add specific users to Linux Admins group
+  microsoft.ad.group:
+    name: "Linux Admins"
+    scope: global
+    members:
+      add: "{{ linux_admin_users }}"
+    state: present
+
+- name: Display created users
+  ansible.builtin.debug:
+    msg: "Created domain user: {{ item.username }} ({{ item.firstname }} {{ item.lastname }})"
+  loop: "{{ domain_users }}"

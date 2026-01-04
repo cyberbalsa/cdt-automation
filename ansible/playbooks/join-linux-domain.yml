@@ -1,0 +1,8 @@
+---
+- name: Join Linux servers to domain
+  hosts: linux_members
+  become: true
+  vars:
+    domain_controller_ip: "{{ hostvars[groups['windows_dc'][0]]['internal_ip'] }}"
+  roles:
+    - linux_domain_member

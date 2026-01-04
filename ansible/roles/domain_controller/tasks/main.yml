@@ -1,0 +1,64 @@
+---
+- name: Change local Administrator password
+  ansible.windows.win_user:
+    name: Administrator
+    password: "{{ domain_admin_password }}"
+    update_password: always
+
+- name: Install AD-Domain-Services feature
+  ansible.windows.win_feature:
+    name: AD-Domain-Services
+    state: present
+    include_management_tools: true
+  register: domain_controller_ad_feature_result
+
+- name: Reboot if feature installation requires it
+  ansible.windows.win_reboot:
+    reboot_timeout: 600
+  when: domain_controller_ad_feature_result.reboot_required
+
+- name: Install DNS Server feature
+  ansible.windows.win_feature:
+    name: DNS
+    state: present
+    include_management_tools: true
+
+- name: Create new forest and domain
+  microsoft.ad.domain:
+    dns_domain_name: "{{ domain_name }}.local"
+    safe_mode_password: "{{ domain_admin_password }}"
+    create_dns_delegation: false
+  register: domain_controller_domain_install
+
+- name: Reboot after domain creation
+  ansible.windows.win_reboot:
+    reboot_timeout: 600
+  when: domain_controller_domain_install.reboot_required
+
+- name: Configure DNS forwarders
+  ansible.windows.win_shell: |
+    Add-DnsServerForwarder -IPAddress {{ item }}
+  loop: "{{ dns_forwarders }}"
+  failed_when: false
+  changed_when: false
+
+- name: Create Organizational Units
+  ansible.windows.win_shell: |
+    Import-Module ActiveDirectory
+    try {
+      New-ADOrganizationalUnit -Name "{{ item }}" -Path "DC={{ domain_name }},DC=local" -ErrorAction SilentlyContinue
+    } catch {
+      Write-Host "OU {{ item }} may already exist or creation failed: $_"
+    }
+  loop: "{{ organizational_units }}"
+  failed_when: false
+  changed_when: false
+
+- name: Wait for domain to be fully operational
+  ansible.windows.win_shell: |
+    Get-ADDomain -Identity "{{ domain_name }}.local"
+  register: domain_controller_domain_check
+  until: domain_controller_domain_check.rc == 0
+  retries: 10
+  delay: 30
+  changed_when: false

@@ -67,8 +67,13 @@ echo "🔍 Running ansible-lint on ansible/..."
 echo "========================================"
 cd ansible
 
-# Run ansible-lint
-if ansible-lint *.yml; then
+# Find all YAML files in ansible directory and run ansible-lint
+ANSIBLE_FILES=$(find . -type f \( -name "*.yml" -o -name "*.yaml" \) -not -path "./.ansible/*" -not -path "./inventory/*")
+
+if [ -z "$ANSIBLE_FILES" ]; then
+    echo "⚠️  No Ansible YAML files found"
+    ANSIBLE_LINT_STATUS=0
+elif ansible-lint $ANSIBLE_FILES; then
     echo "✅ ansible-lint passed with no errors"
     ANSIBLE_LINT_STATUS=0
 else

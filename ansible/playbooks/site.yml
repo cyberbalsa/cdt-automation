@@ -11,6 +11,7 @@
           - "Windows Members: {{ groups['windows_members'] | map('extract', hostvars, 'internal_ip') | join(', ') }}"
           - "Linux Members: {{ groups['linux_members'] | map('extract', hostvars, 'internal_ip') | join(', ') }}"
           - "Domain: CDT.local"
+
 - name: Setup Domain Controller
   import_playbook: setup-domain-controller.yml
 

@@ -1,0 +1,6 @@
+---
+- name: Setup Windows Domain Controller
+  hosts: windows_dc
+  gather_facts: false
+  roles:
+    - domain_controller

@@ -35,13 +35,15 @@ def get_tofu_output(tofu_dir='opentofu'):
         # Always return to original directory
         os.chdir(original_dir)
 
-def create_inventory(tofu_data, ansible_dir='ansible', inventory_filename='inventory.ini'):
+def create_inventory(tofu_data, ansible_dir='ansible', inventory_filename='inventory/production.ini'):
     """Create Ansible inventory file in the ansible directory"""
 
     # Create ansible directory if it doesn't exist
     Path(ansible_dir).mkdir(parents=True, exist_ok=True)
 
+    # Create full path and ensure parent directories exist
     output_path = Path(ansible_dir) / inventory_filename
+    output_path.parent.mkdir(parents=True, exist_ok=True)
 
     with open(output_path, 'w') as f:
         # Get VM data
@@ -103,7 +105,7 @@ def main():
     # Parse command line arguments
     tofu_dir = sys.argv[1] if len(sys.argv) > 1 else 'opentofu'
     ansible_dir = sys.argv[2] if len(sys.argv) > 2 else 'ansible'
-    inventory_filename = sys.argv[3] if len(sys.argv) > 3 else 'inventory.ini'
+    inventory_filename = sys.argv[3] if len(sys.argv) > 3 else 'inventory/production.ini'
 
     print(f"Fetching OpenTofu output from '{tofu_dir}' directory...")
     tofu_data = get_tofu_output(tofu_dir)

@@ -1,0 +1,3 @@
+---
+# Default variables for domain_controller role
+# These can be overridden in group_vars/all.yml or host_vars/

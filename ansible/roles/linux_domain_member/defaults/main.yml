@@ -1,0 +1,6 @@
+---
+# Default variables for linux_domain_member role
+# Override these in group_vars/ or pass them as extra vars
+
+# Domain controller IP is typically set dynamically in playbook
+# domain_controller_ip: "{{ hostvars[groups['windows_dc'][0]]['internal_ip'] }}"

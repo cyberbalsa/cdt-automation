@@ -51,27 +51,4 @@ linux_admin_users:
   - "jdoe"
   - "asmith"
 
-# ==============================================================================
-# Kerberos Configuration
-# ==============================================================================
-kerberos_ticket_lifetime: "24h"
-kerberos_renew_lifetime: "7d"
-
-# ==============================================================================
-# Linux PAM Configuration
-# ==============================================================================
-pam_mkhomedir_skel: "/etc/skel"
-pam_mkhomedir_umask: "077"
-
-# ==============================================================================
-# SSSD Configuration
-# ==============================================================================
-sssd_fallback_homedir: "/home/%u@%d"
-sssd_default_shell: "/bin/bash"
-
-# ==============================================================================
-# SSH Configuration
-# ==============================================================================
-ssh_allowed_groups:
-  - "ssh users"
-  - "linux admins"
+# Linux-specific variables have been moved to group_vars/linux_members.yml
