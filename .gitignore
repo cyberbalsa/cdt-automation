@@ -58,3 +58,6 @@ id_ed25519*
 # OpenStack credentials (downloaded from OpenStack Dashboard)
 # Pattern matches: app-cred-USERNAME-PROJECT-openrc.sh, app-cred-openrc.sh, etc.
 app-cred*openrc.sh
+
+# Generated RDP files
+RDP/

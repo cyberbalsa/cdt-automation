@@ -1,49 +1,234 @@
 ---
-- name: Join Windows servers to domain
-  hosts: windows_members
-  gather_facts: false
-  vars:
-    domain_controller_ip: "{{ hostvars[groups['windows_dc'][0]]['internal_ip'] }}"
-  tasks:
-    - name: Set DNS server to domain controller
-      ansible.windows.win_dns_client:
-        adapter_names: "*"
-        ipv4_addresses:
-          - "{{ domain_controller_ip }}"
+# ==============================================================================
+# JOIN WINDOWS MEMBER SERVERS TO DOMAIN
+# ==============================================================================
+# This playbook joins Windows servers to the Active Directory domain
+#
+# Students: Run this AFTER setup-domain-controller.yml completes
+#
+# What it does:
+# 1. Configures DNS to point to the domain controller
+# 2. Joins the server to CDT.local domain
+# 3. Reboots the server (required after domain join)
+# 4. Verifies domain membership
+#
+# Expected runtime: 5-10 minutes per server
+#
+# Usage:
+#   ansible-playbook playbooks/join-windows-domain.yml
 
-    - name: Wait for DNS resolution of domain
-      ansible.windows.win_shell: |
-        nslookup {{ domain_name }}.local {{ domain_controller_ip }}
-      register: dns_check
-      until: dns_check.rc == 0
-      retries: 10
-      delay: 30
+- name: Join Windows Member Servers to Domain
+  hosts: windows_members  # All Windows VMs EXCEPT the domain controller
+  gather_facts: true
+  # Note: If you only have 2 Windows VMs total, this will only affect 1 VM
+
+  vars:
+    # Get the domain controller's internal IP dynamically
+    dc_internal_ip: "{{ hostvars[groups['windows_dc'][0]]['internal_ip'] }}"
+
+  pre_tasks:
+    - name: Load global variables
+      ansible.builtin.include_vars:
+        file: "../group_vars/all.yml"
+
+    - name: Load Windows variables
+      ansible.builtin.include_vars:
+        file: "../group_vars/windows.yml"
+
+    - name: Display target information
+      ansible.builtin.debug:
+        msg:
+          - "==================================================="
+          - "Joining {{ inventory_hostname }} to domain {{ domain_name }}"
+          - "Domain Controller: {{ groups['windows_dc'][0] }} ({{ dc_internal_ip }})"
+          - "==================================================="
+
+    # Sanity check: Make sure we have a domain controller
+    - name: Verify domain controller exists
+      ansible.builtin.assert:
+        that:
+          - groups['windows_dc'] is defined
+          - groups['windows_dc'] | length > 0
+        fail_msg: "No domain controller found! Run setup-domain-controller.yml first"
+
+  tasks:
+    # ------------------------------------------------------------------------------
+    # STEP 1: Configure DNS to Point to Domain Controller
+    # ------------------------------------------------------------------------------
+    # This is CRITICAL! Without correct DNS, domain join will fail
+    # The DC provides both DNS and AD services
+
+    # ------------------------------------------------------------------------------
+    # STEP 1: Configure Time and Timezone
+    # ------------------------------------------------------------------------------
+    # Critical: Kerberos requires time sync within 5 minutes
+
+    - name: Set timezone to America/New_York
+      community.windows.win_timezone:
+        timezone: Eastern Standard Time
+      register: timezone_result
+
+    - name: Configure NTP server to use domain controller
+      ansible.windows.win_powershell:
+        script: |
+          # Configure Windows Time service to sync with DC
+          w32tm /config /manualpeerlist:"{{ dc_internal_ip }}" /syncfromflags:manual /reliable:NO /update
+          net stop w32time
+          net start w32time
+          w32tm /resync /force
+
+          # Display current time
+          $currentTime = Get-Date
+          Write-Output "Current system time: $currentTime"
+      register: time_sync
+
+    - name: Display time sync result
+      ansible.builtin.debug:
+        msg: "{{ time_sync.output }}"
+
+    - name: Reboot to clear authentication state and prepare for domain join
+      ansible.windows.win_reboot:
+        reboot_timeout: 600
+        msg: "Rebooting to clear state and prepare for domain join"
+
+    - name: Wait for system to stabilize after reboot
+      ansible.builtin.pause:
+        seconds: 30
+
+    # ------------------------------------------------------------------------------
+    # STEP 2: Configure DNS
+    # ------------------------------------------------------------------------------
+
+    - name: Configure DNS to use domain controller
+      ansible.windows.win_dns_client:
+        adapter_names: '*'  # Apply to all network adapters
+        dns_servers:
+          - "{{ dc_internal_ip }}"  # Primary DNS = Domain Controller
+          - 8.8.8.8                  # Secondary DNS = Google (for internet)
+
+    # Verify DNS is working before proceeding
+    - name: Test DNS resolution of domain
+      ansible.windows.win_powershell:
+        script: |
+          # Try to resolve the domain name
+          # This should return the DC's IP address
+          $result = Resolve-DnsName -Name "{{ domain_name }}" -ErrorAction SilentlyContinue
+          if ($result) {
+            Write-Output "DNS resolution successful: {{ domain_name }} -> $($result.IPAddress)"
+            $Ansible.Changed = $false
+          } else {
+            Write-Error "DNS resolution failed for {{ domain_name }}"
+            $Ansible.Failed = $true
+          }
+      register: dns_test
+      retries: 5
+      delay: 10
+      until: dns_test is succeeded
+
+    # ------------------------------------------------------------------------------
+    # STEP 3: Join Server to Domain
+    # ------------------------------------------------------------------------------
+
+    - name: Check if already joined to domain
+      ansible.windows.win_powershell:
+        script: |
+          # Check current domain membership
+          $cs = Get-WmiObject -Class Win32_ComputerSystem
+          if ($cs.PartOfDomain -and $cs.Domain -eq "{{ domain_name }}") {
+            Write-Output "already_joined"
+          } else {
+            Write-Output "not_joined"
+          }
+      register: domain_status
       changed_when: false
 
-    - name: Join computer to domain
-      microsoft.ad.membership:
-        dns_domain_name: "{{ domain_name }}.local"
-        domain_admin_user: "{{ domain_admin_user }}@{{ domain_name }}.local"
+    - name: Join server to domain
+      ansible.windows.win_domain_membership:
+        dns_domain_name: "{{ domain_name }}"
+        domain_admin_user: "{{ domain_netbios_name }}\\{{ domain_admin_user }}"
         domain_admin_password: "{{ domain_admin_password }}"
         state: domain
-      register: domain_join_result
+      register: domain_join
+      when: >
+        domain_status.output | length > 0 and
+        domain_status.output[0] is not search("already_joined")
 
+    # Domain join requires a reboot to complete
     - name: Reboot after domain join
       ansible.windows.win_reboot:
         reboot_timeout: 600
-      when: domain_join_result.reboot_required
+      when: domain_join is changed
 
-    - name: Wait for system to come back online
-      ansible.builtin.wait_for_connection:
-        delay: 60
-        timeout: 300
+    # ------------------------------------------------------------------------------
+    # STEP 3: Verify Domain Membership
+    # ------------------------------------------------------------------------------
 
     - name: Verify domain membership
-      ansible.windows.win_shell: |
-        (Get-WmiObject -Class Win32_ComputerSystem).Domain
-      register: domain_verification
-      changed_when: false
+      ansible.windows.win_powershell:
+        script: |
+          # Verify we're now part of the domain
+          $cs = Get-WmiObject -Class Win32_ComputerSystem
 
-    - name: Display domain membership status
+          Write-Output "=========================================="
+          Write-Output "Domain Join Verification"
+          Write-Output "=========================================="
+          Write-Output "Computer Name: $($cs.Name)"
+          Write-Output "Part of Domain: $($cs.PartOfDomain)"
+          Write-Output "Domain: $($cs.Domain)"
+
+          if ($cs.PartOfDomain -and $cs.Domain -eq "{{ domain_name }}") {
+            Write-Output "Status: Successfully joined to {{ domain_name }}"
+            $Ansible.Changed = $false
+          } else {
+            Write-Error "Domain join verification failed"
+            $Ansible.Failed = $true
+          }
+      register: verify_join
+
+    - name: Display verification results
       ansible.builtin.debug:
-        msg: "Computer is now member of: {{ domain_verification.stdout_lines[0] }}"
+        msg: "{{ verify_join.output }}"
+
+    # ------------------------------------------------------------------------------
+    # STEP 4: Configure Additional Settings
+    # ------------------------------------------------------------------------------
+
+    - name: Allow domain users to RDP to this server
+      ansible.windows.win_powershell:
+        script: |
+          # Add Domain Users group to Remote Desktop Users
+          # This allows any domain account to RDP in
+          Add-LocalGroupMember -Group "Remote Desktop Users" `
+            -Member "{{ domain_netbios_name }}\Domain Users" `
+            -ErrorAction SilentlyContinue
+
+          # Students: For more restrictive access, change "Domain Users"
+          # to specific groups like "IT Staff" or individual users
+      failed_when: false  # Ignore if already added
+
+# ==============================================================================
+# TROUBLESHOOTING TIPS FOR STUDENTS
+# ==============================================================================
+#
+# Problem: "The specified domain does not exist or cannot be contacted"
+# Solution:
+#   1. Verify DC is running: ansible windows_dc -m ansible.windows.win_ping
+#   2. Check DNS settings: Get-DnsClientServerAddress
+#   3. Ping the DC: ping {{ dc_internal_ip }}
+#
+# Problem: "The user name or password is incorrect"
+# Solution:
+#   1. Verify domain admin credentials in group_vars/all.yml
+#   2. Make sure domain controller setup completed successfully
+#
+# Problem: Server joins but can't login with domain account
+# Solution:
+#   1. Make sure you created domain users (run create-domain-users.yml)
+#   2. Use format: domain\username (e.g., CDT\jdoe)
+#   3. Check "Remote Desktop Users" group membership
+#
+# Attack scenarios to try:
+# - Lateral movement from member server to DC
+# - Privilege escalation using misconfigured services
+# - Credential dumping with mimikatz
+# - Exploit trust relationships between machines

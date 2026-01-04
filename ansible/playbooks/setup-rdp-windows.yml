@@ -1,79 +1,223 @@
 ---
-- name: Setup RDP on Windows servers
-  hosts: windows_members
-  gather_facts: false
-  vars:
-    domain_controller_ip: "{{ hostvars[groups['windows_dc'][0]]['internal_ip'] }}"
+# ==============================================================================
+# SETUP RDP ON WINDOWS SERVERS
+# ==============================================================================
+# This playbook enables and configures Remote Desktop Protocol (RDP)
+#
+# Students: RDP is the primary way to access Windows desktops remotely
+#
+# What it does:
+# 1. Enables Remote Desktop
+# 2. Configures firewall rules for RDP (port 3389)
+# 3. Disables Network Level Authentication (easier for testing)
+# 4. Allows domain users to connect via RDP
+#
+# Expected runtime: 1-2 minutes
+#
+# Usage:
+#   ansible-playbook playbooks/setup-rdp-windows.yml
+
+- name: Configure Remote Desktop on Windows Servers
+  hosts: windows  # All Windows machines (DC + members)
+  gather_facts: true
+
   tasks:
+    # --------------------------------------------------------------------------
+    # STEP 1: Enable Remote Desktop
+    # --------------------------------------------------------------------------
+
     - name: Enable Remote Desktop
-      ansible.windows.win_regedit:
-        path: HKLM:\System\CurrentControlSet\Control\Terminal Server
-        name: fDenyTSConnections
-        data: 0
-        type: dword
+      ansible.windows.win_powershell:
+        script: |
+          # Enable Remote Desktop in registry
+          # Students: This is equivalent to checking the box in System Properties
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' `
+            -Name "fDenyTSConnections" -Value 0
 
-    - name: Enable Remote Desktop on domain controller
-      ansible.windows.win_regedit:
-        path: HKLM:\System\CurrentControlSet\Control\Terminal Server
-        name: fDenyTSConnections
-        data: 0
-        type: dword
-      delegate_to: "{{ groups['windows_dc'][0] }}"
+          Write-Output "Remote Desktop enabled"
+      register: rdp_enable
 
-    - name: Allow Remote Desktop through Windows Firewall
-      community.windows.win_firewall_rule:
-        name: Remote Desktop
-        localport: 3389
-        action: allow
-        direction: in
-        protocol: tcp
-        state: present
-        enabled: true
+    # --------------------------------------------------------------------------
+    # STEP 2: Configure Network Level Authentication (NLA)
+    # --------------------------------------------------------------------------
+    # NLA = Network Level Authentication
+    # Students: Disabling this makes RDP easier to test, but less secure
+    # For defense practice, keep NLA enabled!
 
-    - name: Enable Network Level Authentication (NLA)
-      ansible.windows.win_regedit:
-        path: HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp
-        name: UserAuthentication
-        data: 1
-        type: dword
+    - name: Disable Network Level Authentication
+      ansible.windows.win_powershell:
+        script: |
+          # Disable NLA (allows connections without pre-authentication)
+          # WARNING: This is less secure - only for lab environments!
+          Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' `
+            -Name "UserAuthentication" -Value {{ rdp_nla_enabled | default(false) | ternary(1, 0) }}
 
-    - name: Set RDP security layer to negotiate
-      ansible.windows.win_regedit:
-        path: HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp
-        name: SecurityLayer
-        data: 1
-        type: dword
+          Write-Output "Network Level Authentication: {{ rdp_nla_enabled | default(false) }}"
+      when: rdp_nla_enabled is defined
 
-    - name: Add Domain Users group to Remote Desktop Users
-      ansible.windows.win_group_membership:
-        name: Remote Desktop Users
-        members:
-          - "{{ domain_name }}\\Domain Users"
-        state: present
+    # --------------------------------------------------------------------------
+    # STEP 3: Configure Windows Firewall for RDP
+    # --------------------------------------------------------------------------
 
-    - name: Add specific admin users to Remote Desktop Users
-      ansible.windows.win_group_membership:
-        name: Remote Desktop Users
-        members: "{{ linux_admin_users | map('regex_replace', '^(.*)$', domain_name + '\\\\\\1') | list }}"
-        state: present
+    - name: Enable RDP firewall rule
+      ansible.windows.win_powershell:
+        script: |
+          # Enable the built-in RDP firewall rule
+          # This allows inbound connections on port 3389
+          Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
 
-    - name: Enable RDP service
-      ansible.windows.win_service:
-        name: TermService
-        start_mode: auto
-        state: started
+          Write-Output "Firewall rule enabled for Remote Desktop"
 
-    - name: Verify RDP is enabled
-      ansible.windows.win_shell: |
-        $rdp = Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server' -Name fDenyTSConnections
-        $service = Get-Service -Name TermService
-        @{
-          RDP_Enabled = $rdp.fDenyTSConnections -eq 0
-          Service_Running = $service.Status -eq 'Running'
-        } | ConvertTo-Json
+    - name: Create custom RDP firewall rule (if needed)
+      ansible.windows.win_powershell:
+        script: |
+          # Create firewall rule for RDP if it doesn't exist
+          $ruleName = "Remote Desktop - Custom"
+          $existingRule = Get-NetFirewallRule -DisplayName $ruleName -ErrorAction SilentlyContinue
+
+          if (-not $existingRule) {
+            New-NetFirewallRule -DisplayName $ruleName `
+              -Direction Inbound `
+              -Protocol TCP `
+              -LocalPort {{ rdp_port | default(3389) }} `
+              -Action Allow `
+              -Profile Domain,Private,Public `
+              -Enabled True
+            $Ansible.Changed = $true
+          } else {
+            $Ansible.Changed = $false
+          }
+      failed_when: false  # May already exist
+
+    # --------------------------------------------------------------------------
+    # STEP 4: Configure RDP User Access
+    # --------------------------------------------------------------------------
+
+    - name: Add Domain Users to Remote Desktop Users group
+      ansible.windows.win_powershell:
+        script: |
+          # Allow all domain users to RDP
+          # Students: For more security, restrict to specific groups
+          try {
+            Add-LocalGroupMember -Group "Remote Desktop Users" `
+              -Member "{{ domain_netbios_name }}\Domain Users" `
+              -ErrorAction SilentlyContinue
+
+            Write-Output "Domain Users added to Remote Desktop Users group"
+            $Ansible.Changed = $true
+          } catch {
+            Write-Output "Domain Users already in Remote Desktop Users group"
+            $Ansible.Changed = $false
+          }
+      when: domain_netbios_name is defined
+
+    # --------------------------------------------------------------------------
+    # STEP 5: Verify RDP Configuration
+    # --------------------------------------------------------------------------
+
+    - name: Check RDP status
+      ansible.windows.win_powershell:
+        script: |
+          # Query current RDP configuration
+          $rdpEnabled = (Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server').fDenyTSConnections
+          $nlaEnabled = (Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp').UserAuthentication
+
+          Write-Output "=========================================="
+          Write-Output "RDP Configuration Summary"
+          Write-Output "=========================================="
+          Write-Output "Computer: $env:COMPUTERNAME"
+          Write-Output "RDP Enabled: $(if ($rdpEnabled -eq 0) { 'Yes' } else { 'No' })"
+          Write-Output "NLA Enabled: $(if ($nlaEnabled -eq 1) { 'Yes' } else { 'No' })"
+          Write-Output "RDP Port: {{ rdp_port | default(3389) }}"
+
+          # Check firewall rule
+          $fwRule = Get-NetFirewallRule -DisplayGroup "Remote Desktop" -ErrorAction SilentlyContinue
+          Write-Output "Firewall Rule: $(if ($fwRule.Enabled -contains 'True') { 'Enabled' } else { 'Disabled' })"
+
+          Write-Output "=========================================="
+          $Ansible.Changed = $false
       register: rdp_status
       changed_when: false
 
     - name: Display RDP status
       ansible.builtin.debug:
-        msg: "{{ rdp_status.stdout | from_json }}"
+        msg: "{{ rdp_status.output }}"
+
+  post_tasks:
+    - name: Display connection instructions
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "RDP Setup Complete!"
+          - "=========================================="
+          - ""
+          - "Connect to {{ inventory_hostname }}:"
+          - "  Host: {{ ansible_host }}"
+          - "  Port: {{ rdp_port | default(3389) }}"
+          - "  Username: CDT\\jdoe (or any domain user)"
+          - "  Password: UserPass123!"
+          - ""
+          - "From Linux/Mac:"
+          - "  rdesktop {{ ansible_host }}:{{ rdp_port | default(3389) }}"
+          - "  OR"
+          - "  xfreerdp /v:{{ ansible_host }} /u:CDT\\jdoe /p:UserPass123!"
+          - ""
+          - "From Windows:"
+          - "  mstsc /v:{{ ansible_host }}:{{ rdp_port | default(3389) }}"
+          - ""
+          - "=========================================="
+
+# ==============================================================================
+# TROUBLESHOOTING RDP
+# ==============================================================================
+#
+# Problem: "Connection refused" or "Unable to connect"
+# Solution:
+#   1. Check firewall: Get-NetFirewallRule -DisplayGroup "Remote Desktop"
+#   2. Verify RDP is enabled: Get-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server'
+#   3. Test port: Test-NetConnection -ComputerName <ip> -Port 3389
+#
+# Problem: "Authentication error" or credentials rejected
+# Solution:
+#   1. Try domain format: CDT\username
+#   2. Verify user is in Remote Desktop Users group
+#   3. Check domain trust: nltest /sc_query:CDT.local
+#
+# Problem: Black screen after connecting
+# Solution:
+#   1. User may not have full desktop access
+#   2. Check Group Policy restrictions
+#   3. Try different user account
+#
+# ==============================================================================
+# ATTACK SCENARIOS FOR STUDENTS
+# ==============================================================================
+#
+# 1. RDP BRUTE FORCE
+#    - Use hydra/ncrack to brute force RDP
+#    - Try password spraying against multiple accounts
+#    - Monitor Windows Event Log 4625 (failed logins)
+#
+# 2. RDP CREDENTIAL THEFT
+#    - Extract saved RDP credentials from .rdp files
+#    - Use mimikatz to dump credentials from lsass.exe
+#    - Capture credentials with Responder during RDP authentication
+#
+# 3. RDP MAN-IN-THE-MIDDLE
+#    - Intercept RDP traffic (requires network access)
+#    - Exploit weak TLS configurations
+#    - Use tools like Seth for RDP MitM
+#
+# 4. RDP LATERAL MOVEMENT
+#    - Use pass-the-hash for RDP authentication
+#    - Pivot through compromised accounts
+#    - Use Restricted Admin mode bypasses
+#
+# 5. DEFENSE PRACTICE
+#    - Enable NLA (rdp_nla_enabled: true in group_vars)
+#    - Implement account lockout policies
+#    - Monitor Event ID 4624 (successful RDP logins)
+#    - Use RDP gateways for centralized access
+#    - Require MFA for RDP access (not available in this lab)
+#
+# ==============================================================================

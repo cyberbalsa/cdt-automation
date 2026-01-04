@@ -208,15 +208,28 @@ ansible/
 - **Scalability**: Easy to add new roles and playbooks without cluttering the root directory
 
 ### Playbook Execution Order in playbooks/site.yml
-1. Setup Domain Controller (uses `domain_controller` role)
-2. Join Windows Members (remaining Windows VMs)
-3. Activate Windows (all Windows VMs)
-4. Join Linux Members (uses `linux_domain_member` role)
-5. Create Domain Users (uses `domain_users` role + SSH config)
-6. Setup RDP on Linux
-7. Setup RDP on Windows
+1. **Validate Inventory** - Checks that required groups are populated
+2. Setup Domain Controller (uses `domain_controller` role)
+3. Join Windows Members (remaining Windows VMs)
+4. Activate Windows (all Windows VMs)
+5. Join Linux Members (uses `linux_domain_member` role)
+6. Create Domain Users (uses `domain_users` role + SSH config)
+7. Setup RDP on Linux
+8. Setup RDP on Windows
 
 When creating new playbooks, add them to `playbooks/site.yml` using `import_playbook` to include them in the standard workflow.
+
+### Inventory Validation
+The `site.yml` playbook automatically validates the inventory before execution. It checks that:
+- Required groups (`windows`, `windows_dc`, `linux_members`) exist
+- Each group contains at least one host
+
+If validation fails, you'll see a helpful error message instructing you to run:
+```bash
+python3 import-tofu-to-ansible.py
+```
+
+This prevents common mistakes like running Ansible before generating the inventory from OpenTofu outputs.
 
 ### Credential Management
 

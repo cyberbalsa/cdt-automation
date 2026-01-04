@@ -1,3 +1,18 @@
 ---
-# Default variables for domain_controller role
-# These can be overridden in group_vars/all.yml or host_vars/
+# ==============================================================================
+# DOMAIN CONTROLLER ROLE - DEFAULT VARIABLES
+# ==============================================================================
+# Students: These are default values that can be overridden in group_vars/
+
+# Domain configuration (pulled from group_vars/all.yml by default)
+dc_domain_name: "{{ domain_name }}"
+dc_domain_netbios_name: "{{ domain_netbios_name }}"
+dc_safe_mode_password: "{{ domain_safe_mode_password }}"
+
+# Reboot behavior after installing features
+dc_reboot_after_promotion: true
+
+# DNS forwarders (external DNS servers)
+dc_dns_forwarders:
+  - 8.8.8.8
+  - 1.1.1.1

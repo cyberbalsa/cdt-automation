@@ -1,0 +1,55 @@
+# ==============================================================================
+# ANSIBLE-LINT CONFIGURATION
+# ==============================================================================
+# Configuration for ansible-lint to enforce best practices while allowing
+# intentional deviations for educational clarity
+#
+# Students: This file controls which linting rules are enforced
+
+---
+# Skip certain rules for better readability in educational content
+skip_list:
+  - var-naming[no-role-prefix]  # Allow shorter variable names in roles for clarity
+  # Examples: ldm_* instead of linux_domain_member_* (easier to read)
+
+# Warn but don't fail on these rules
+warn_list:
+  - experimental  # Warn about experimental features
+
+# Use the moderate profile (reasonable defaults)
+profile: moderate
+
+# Exclude certain paths from linting
+exclude_paths:
+  - .cache/
+  - inventory/production.ini  # Auto-generated file
+  - '*.retry'
+
+# Treat these as playbooks (not roles)
+kinds:
+  - playbook: '*/playbooks/*.yml'
+  - tasks: '*/tasks/*.yml'
+  - vars: '*/group_vars/*.yml'
+  - vars: '*/defaults/*.yml'
+  - handlers: '*/handlers/*.yml'
+
+# Mock modules that require specific collections
+mock_modules:
+  - ansible.windows.win_powershell
+  - ansible.windows.win_feature
+  - ansible.windows.win_service
+  - ansible.windows.win_domain_membership
+  - ansible.windows.win_dns_client
+  - ansible.windows.win_reboot
+  - ansible.windows.win_ping
+  - ansible.builtin.wait_for_connection
+  - community.general.ufw
+
+# Mock roles for testing
+mock_roles:
+  - domain_controller
+  - linux_domain_member
+  - domain_users
+
+# Students: If you want stricter linting, change profile to "production"
+# If you want more relaxed linting, change to "min"

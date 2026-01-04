@@ -1,6 +1,141 @@
 ---
-- name: Setup Windows Domain Controller
-  hosts: windows_dc
-  gather_facts: false
+# ==============================================================================
+# SETUP DOMAIN CONTROLLER PLAYBOOK
+# ==============================================================================
+# This playbook promotes the first Windows VM to an Active Directory DC
+#
+# Students: This is the FIRST playbook you should run!
+# It creates the foundation for your entire attack/defend lab
+#
+# What it does:
+# 1. Installs Active Directory Domain Services (AD DS)
+# 2. Creates a new AD forest and domain (CDT.local)
+# 3. Configures DNS services
+# 4. Makes the domain ready for member servers to join
+#
+# Expected runtime: 15-20 minutes (includes automatic reboots)
+#
+# Usage:
+#   ansible-playbook playbooks/setup-domain-controller.yml
+#
+# Or run as part of the full deployment:
+#   ansible-playbook playbooks/site.yml
+
+- name: Setup Active Directory Domain Controller
+  hosts: windows_dc  # Targets only the domain controller (first Windows VM)
+  gather_facts: true
+
+  # Pre-flight checks
+  pre_tasks:
+    - name: Load global variables
+      ansible.builtin.include_vars:
+        file: "../group_vars/all.yml"
+
+    - name: Load domain controller variables
+      ansible.builtin.include_vars:
+        file: "../group_vars/windows_dc.yml"
+
+    - name: Display target host information
+      ansible.builtin.debug:
+        msg: "Setting up Domain Controller on {{ inventory_hostname }} for domain {{ domain_name }}"
+
+    - name: Verify Windows version
+      ansible.windows.win_powershell:
+        script: |
+          # Check we're running on Windows Server
+          $os = Get-WmiObject -Class Win32_OperatingSystem
+          if ($os.Caption -notlike "*Server*") {
+            Write-Error "This playbook requires Windows Server"
+            $Ansible.Failed = $true
+          } else {
+            Write-Output "Running on: $($os.Caption)"
+            $Ansible.Changed = $false
+          }
+      register: os_check
+
+    - name: Set timezone to America/New_York
+      community.windows.win_timezone:
+        timezone: Eastern Standard Time
+      register: timezone_result
+
+    - name: Configure Windows Time service
+      ansible.windows.win_powershell:
+        script: |
+          # Configure Windows Time service
+          w32tm /config /manualpeerlist:"time.windows.com,0x8" /syncfromflags:manual /reliable:YES /update
+          net stop w32time
+          net start w32time
+          w32tm /resync /force
+
+          # Display current time
+          $currentTime = Get-Date
+          Write-Output "Current system time: $currentTime"
+      register: time_sync
+
+    - name: Reboot if timezone changed
+      ansible.windows.win_reboot:
+        reboot_timeout: 600
+        msg: "Rebooting to apply timezone changes"
+      when: timezone_result.changed
+
+  # Main tasks: Execute the domain_controller role
   roles:
-    - domain_controller
+    - role: domain_controller
+
+  # Post-deployment tasks
+  post_tasks:
+    - name: Display domain controller information
+      ansible.windows.win_powershell:
+        script: |
+          # Gather information about the newly created domain
+          $domain = Get-ADDomain
+          $dc = Get-ADDomainController
+
+          Write-Output "=========================================="
+          Write-Output "Domain Controller Setup Complete!"
+          Write-Output "=========================================="
+          Write-Output "Domain Name: $($domain.DNSRoot)"
+          Write-Output "NetBIOS Name: $($domain.NetBIOSName)"
+          Write-Output "Domain Functional Level: $($domain.DomainMode)"
+          Write-Output "Forest Functional Level: $($domain.ForestMode)"
+          Write-Output "DC Name: $($dc.Name)"
+          Write-Output "DC IP: $($dc.IPv4Address)"
+          Write-Output "=========================================="
+          Write-Output ""
+          Write-Output "Next steps:"
+          Write-Output "1. Run create-domain-users.yml to create domain accounts"
+          Write-Output "2. Run join-windows-domain.yml to add Windows members"
+          Write-Output "3. Run join-linux-domain.yml to add Linux members"
+          Write-Output "=========================================="
+
+          $Ansible.Changed = $false
+      register: domain_info
+
+    - name: Show domain information
+      ansible.builtin.debug:
+        msg: "{{ domain_info.output }}"
+
+# ==============================================================================
+# TROUBLESHOOTING TIPS FOR STUDENTS
+# ==============================================================================
+#
+# Problem: Playbook fails with "Cannot contact domain controller"
+# Solution: Wait 5 minutes after promotion for AD services to fully start
+#
+# Problem: DNS resolution not working
+# Solution: Check DNS forwarders with: Get-DnsServerForwarder
+#
+# Problem: Can't join other machines to domain
+# Solution: Verify firewall allows AD traffic (ports 88, 389, 445, 3268, etc.)
+#
+# Problem: Need to reset and start over
+# Solution: Use OpenTofu to destroy and recreate the VM:
+#   cd opentofu && tofu taint openstack_compute_instance_v2.windows[0]
+#   tofu apply
+#
+# Attack practice after DC is ready:
+# - Use BloodHound to map domain relationships
+# - Try Kerberoasting with GetUserSPNs.py
+# - Use CrackMapExec to enumerate shares and users
+# - Practice pass-the-hash with mimikatz
+# - Dump NTDS.dit for offline hash cracking

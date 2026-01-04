@@ -1,55 +1,227 @@
 ---
-- name: Create domain users
-  microsoft.ad.user:
-    name: "{{ item.username }}"
-    firstname: "{{ item.firstname }}"
-    surname: "{{ item.lastname }}"
-    password: "{{ item.password }}"
-    password_never_expires: true
-    user_cannot_change_password: false
-    enabled: true
-    groups:
-      set:
-        - "Domain Users"
-    state: present
-    path: "CN=Users,DC={{ domain_name }},DC=local"
-  loop: "{{ domain_users }}"
+# ==============================================================================
+# DOMAIN USERS AND GROUPS CREATION TASKS
+# ==============================================================================
+# This role creates users and groups in Active Directory
+#
+# Students: These are your attack targets and test accounts!
+#
+# What this creates:
+# 1. Domain groups (IT Staff, Accounting, Engineering, etc.)
+# 2. Domain user accounts with passwords
+# 3. Group memberships (who belongs to which groups)
+# 4. Optional: Organizational Units (OUs) for structure
+#
+# Attack scenarios:
+# - Password spraying (try common passwords against all users)
+# - Credential stuffing (reuse known passwords)
+# - Kerberoasting (attack service accounts if configured)
+# - AS-REP roasting (attack users without pre-auth)
+# - Targeted phishing (realistic usernames and roles)
 
-- name: Create SSH Users group
-  microsoft.ad.group:
-    name: "SSH Users"
-    scope: global
-    category: security
-    state: present
-    path: "CN=Users,DC={{ domain_name }},DC=local"
+# ------------------------------------------------------------------------------
+# STEP 1: Create Domain Groups
+# ------------------------------------------------------------------------------
 
-- name: Add users to SSH Users group
-  microsoft.ad.group:
-    name: "SSH Users"
-    scope: global
-    members:
-      add:
-        - "{{ item.username }}"
-    state: present
-  loop: "{{ domain_users }}"
+- name: Create domain security groups
+  ansible.windows.win_powershell:
+    script: |
+      # Create each domain group defined in group_vars
+      $groupName = "{{ item.name }}"
+      $groupScope = "{{ item.scope }}"
+      $groupCategory = "{{ item.category }}"
+      $groupDescription = "{{ item.description }}"
 
-- name: Create Linux Admins group
-  microsoft.ad.group:
-    name: "Linux Admins"
-    scope: global
-    category: security
-    state: present
-    path: "CN=Users,DC={{ domain_name }},DC=local"
+      # Check if group already exists
+      $group = Get-ADGroup -Filter "Name -eq '$groupName'" -ErrorAction SilentlyContinue
 
-- name: Add specific users to Linux Admins group
-  microsoft.ad.group:
-    name: "Linux Admins"
-    scope: global
-    members:
-      add: "{{ linux_admin_users }}"
-    state: present
+      if (-not $group) {
+        # Create new group
+        New-ADGroup `
+          -Name $groupName `
+          -GroupScope $groupScope `
+          -GroupCategory $groupCategory `
+          -Description $groupDescription `
+          -Path "CN=Users,DC={{ du_domain_netbios_name }},DC=local"
 
-- name: Display created users
+        Write-Output "Created group: $groupName"
+        $Ansible.Changed = $true
+      } else {
+        Write-Output "Group already exists: $groupName"
+        $Ansible.Changed = $false
+      }
+  loop: "{{ du_groups }}"
+  when: du_groups is defined and du_groups | length > 0
+  register: group_creation
+
+# ------------------------------------------------------------------------------
+# STEP 2: Create Domain Users
+# ------------------------------------------------------------------------------
+
+- name: Create domain user accounts
+  ansible.windows.win_powershell:
+    script: |
+      # Create each domain user defined in group_vars
+      $username = "{{ item.username }}"
+      $firstname = "{{ item.firstname }}"
+      $surname = "{{ item.surname }}"
+      $password = "{{ item.password }}"
+      $displayName = "$firstname $surname"
+
+      # Check if user already exists
+      $user = Get-ADUser -Filter "SamAccountName -eq '$username'" -ErrorAction SilentlyContinue
+
+      if (-not $user) {
+        # Convert password to SecureString
+        $SecurePassword = ConvertTo-SecureString $password -AsPlainText -Force
+
+        # Create new user
+        New-ADUser `
+          -SamAccountName $username `
+          -Name $displayName `
+          -GivenName $firstname `
+          -Surname $surname `
+          -DisplayName $displayName `
+          -UserPrincipalName "$username@{{ du_domain_name }}" `
+          -AccountPassword $SecurePassword `
+          -Enabled $true `
+          -PasswordNeverExpires $true `
+          -ChangePasswordAtLogon $false `
+          -Path "CN=Users,DC={{ du_domain_netbios_name }},DC=local"
+
+        Write-Output "Created user: $username ($displayName)"
+        $Ansible.Changed = $true
+      } else {
+        Write-Output "User already exists: $username"
+        $Ansible.Changed = $false
+      }
+  loop: "{{ du_users }}"
+  when: du_users is defined and du_users | length > 0
+  register: user_creation
+
+# ------------------------------------------------------------------------------
+# STEP 3: Add Users to Groups
+# ------------------------------------------------------------------------------
+
+- name: Add users to their assigned groups
+  ansible.windows.win_powershell:
+    script: |
+      # Add user to all groups specified in their configuration
+      $username = "{{ item.0.username }}"
+      $groupName = "{{ item.1 }}"
+
+      # Check if user is already in the group
+      $isMember = Get-ADGroupMember -Identity $groupName -ErrorAction SilentlyContinue |
+                  Where-Object { $_.SamAccountName -eq $username }
+
+      if (-not $isMember) {
+        # Add user to group
+        Add-ADGroupMember -Identity $groupName -Members $username
+
+        Write-Output "Added $username to group: $groupName"
+        $Ansible.Changed = $true
+      } else {
+        Write-Output "$username is already in group: $groupName"
+        $Ansible.Changed = $false
+      }
+  loop: "{{ du_users | subelements('groups') }}"
+  when: du_users is defined and du_users | length > 0
+
+# ------------------------------------------------------------------------------
+# STEP 4: Verify User and Group Creation
+# ------------------------------------------------------------------------------
+
+- name: List all domain users
+  ansible.windows.win_powershell:
+    script: |
+      # Display all created users with their groups
+      Write-Output "=========================================="
+      Write-Output "Domain Users Summary"
+      Write-Output "=========================================="
+
+      $users = Get-ADUser -Filter * -Properties MemberOf |
+               Where-Object { $_.Name -notlike "Administrator*" -and $_.Name -notlike "Guest*" -and $_.Name -notlike "krbtgt*" }
+
+      foreach ($user in $users) {
+        Write-Output ""
+        Write-Output "User: $($user.SamAccountName) ($($user.Name))"
+        Write-Output "  UPN: $($user.UserPrincipalName)"
+
+        # Get group memberships
+        $groups = $user.MemberOf | ForEach-Object {
+          (Get-ADGroup $_).Name
+        }
+
+        if ($groups) {
+          Write-Output "  Groups: $($groups -join ', ')"
+        } else {
+          Write-Output "  Groups: (none)"
+        }
+      }
+
+      Write-Output ""
+      Write-Output "=========================================="
+      $Ansible.Changed = $false
+  register: user_summary
+  changed_when: false
+
+- name: Display user summary
   ansible.builtin.debug:
-    msg: "Created domain user: {{ item.username }} ({{ item.firstname }} {{ item.lastname }})"
-  loop: "{{ domain_users }}"
+    msg: "{{ user_summary.output }}"
+
+# ------------------------------------------------------------------------------
+# STEP 5: Display Security Information for Students
+# ------------------------------------------------------------------------------
+
+- name: Display security analysis
+  ansible.builtin.debug:
+    msg:
+      - "=========================================="
+      - "SECURITY ANALYSIS - FOR EDUCATIONAL USE ONLY"
+      - "=========================================="
+      - ""
+      - "Created {{ du_users | length }} domain users"
+      - "Created {{ du_groups | length }} domain groups"
+      - ""
+      - "ATTACK SURFACE:"
+      - "- All users have PasswordNeverExpires = true (weak security)"
+      - "- All users have simple passwords (easy to crack)"
+      - "- Some users are Domain Admins (high-value targets)"
+      - ""
+      - "SUGGESTED ATTACK TECHNIQUES:"
+      - "1. Password Spraying: Try common passwords against all accounts"
+      - "2. Kerberoasting: Request service tickets and crack offline"
+      - "3. AS-REP Roasting: Target users without Kerberos pre-auth"
+      - "4. BloodHound: Map relationships and find attack paths"
+      - "5. Credential Dumping: Use mimikatz on compromised machines"
+      - ""
+      - "DEFENSE PRACTICE:"
+      - "- Enable account lockout policies"
+      - "- Require complex passwords"
+      - "- Enable password expiration"
+      - "- Monitor for failed login attempts"
+      - "- Implement MFA (not available in this lab)"
+      - "=========================================="
+
+# ==============================================================================
+# DOMAIN USERS CREATION COMPLETE!
+# ==============================================================================
+# Students: You now have realistic user accounts to practice with
+#
+# Default credentials (from group_vars/all.yml):
+# - jdoe:UserPass123!
+# - asmith:UserPass123! (Domain Admin!)
+# - bwilson:UserPass123!
+# - mjohnson:UserPass123!
+# - dlee:UserPass123!
+#
+# Test login (Windows):
+#   RDP to any Windows machine: CDT\jdoe
+#
+# Test login (Linux):
+#   SSH: ssh jdoe@<linux_ip>
+#
+# Attack practice:
+# - Use CrackMapExec to enumerate users: cme smb <dc_ip> -u jdoe -p UserPass123!
+# - Use BloodHound to map domain: bloodhound-python -d CDT.local -u jdoe -p UserPass123!
+# - Try Kerberoasting: GetUserSPNs.py -request CDT.local/jdoe:UserPass123!

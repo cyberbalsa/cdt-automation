@@ -1,10 +1,22 @@
 ---
+# ==============================================================================
+# LINUX DOMAIN MEMBER ROLE - HANDLERS
+# ==============================================================================
+# Handlers are tasks that run when notified by other tasks
+# They only run once even if notified multiple times
+
 - name: Restart sssd
-  ansible.builtin.systemd:
+  ansible.builtin.service:
     name: sssd
     state: restarted
 
 - name: Restart ssh
-  ansible.builtin.systemd:
+  ansible.builtin.service:
     name: ssh
     state: restarted
+
+- name: Restart samba
+  ansible.builtin.service:
+    name: smbd
+    state: restarted
+  failed_when: false  # Samba might not be running yet

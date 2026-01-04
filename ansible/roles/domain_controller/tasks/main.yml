@@ -1,64 +1,182 @@
 ---
-- name: Change local Administrator password
-  ansible.windows.win_user:
-    name: Administrator
-    password: "{{ domain_admin_password }}"
-    update_password: always
+# ==============================================================================
+# DOMAIN CONTROLLER SETUP TASKS
+# ==============================================================================
+# This role promotes a Windows Server to an Active Directory Domain Controller
+# Students: This is the foundation of your attack/defend lab!
+#
+# What this does:
+# 1. Installs AD DS, DNS, and management tools
+# 2. Promotes server to domain controller
+# 3. Configures DNS forwarders
+# 4. Waits for AD services to be ready
+#
+# Attack scenarios to explore:
+# - Kerberoasting (attacking service accounts)
+# - Golden/Silver ticket attacks
+# - DCSync attacks (mimikatz)
+# - Pass-the-hash / Pass-the-ticket
+# - LDAP enumeration
 
-- name: Install AD-Domain-Services feature
+# ------------------------------------------------------------------------------
+# STEP 1: Install Required Windows Features
+# ------------------------------------------------------------------------------
+- name: Install Active Directory Domain Services and DNS
   ansible.windows.win_feature:
-    name: AD-Domain-Services
-    state: present
-    include_management_tools: true
-  register: domain_controller_ad_feature_result
+    name: "{{ item.name }}"
+    state: "{{ item.state }}"
+    include_management_tools: "{{ item.include_management_tools | default(true) }}"
+    include_sub_features: "{{ item.include_sub_features | default(true) }}"
+  loop: "{{ dc_features }}"
+  register: feature_install
+  # This may take 5-10 minutes on first run
 
-- name: Reboot if feature installation requires it
+- name: Reboot if required after feature installation
   ansible.windows.win_reboot:
     reboot_timeout: 600
-  when: domain_controller_ad_feature_result.reboot_required
+  when: feature_install is changed
 
-- name: Install DNS Server feature
-  ansible.windows.win_feature:
-    name: DNS
-    state: present
-    include_management_tools: true
+# ------------------------------------------------------------------------------
+# STEP 2: Promote Server to Domain Controller
+# ------------------------------------------------------------------------------
+- name: Check if server is already a domain controller
+  ansible.windows.win_powershell:
+    script: |
+      # Check if AD DS is installed and configured
+      $domain = Get-ADDomain -ErrorAction SilentlyContinue
+      if ($domain) {
+        Write-Output "already_dc"
+      } else {
+        Write-Output "not_dc"
+      }
+  register: dc_status
+  ignore_errors: true
+  changed_when: false
 
-- name: Create new forest and domain
-  microsoft.ad.domain:
-    dns_domain_name: "{{ domain_name }}.local"
-    safe_mode_password: "{{ domain_admin_password }}"
-    create_dns_delegation: false
-  register: domain_controller_domain_install
+- name: Promote server to domain controller
+  ansible.windows.win_powershell:
+    script: |
+      # This PowerShell command creates a new AD forest
+      # Forest = The top-level container in Active Directory
+      #
+      # Key parameters:
+      # -DomainName: Your domain (e.g., CDT.local)
+      # -SafeModeAdministratorPassword: Recovery password
+      # -InstallDns: Also install DNS server
+      # -Force: Don't prompt for confirmation
 
-- name: Reboot after domain creation
-  ansible.windows.win_reboot:
-    reboot_timeout: 600
-  when: domain_controller_domain_install.reboot_required
+      $SecurePassword = ConvertTo-SecureString "{{ dc_safe_mode_password }}" -AsPlainText -Force
+
+      Install-ADDSForest `
+        -DomainName "{{ dc_domain_name }}" `
+        -DomainNetbiosName "{{ dc_domain_netbios_name }}" `
+        -SafeModeAdministratorPassword $SecurePassword `
+        -InstallDns `
+        -Force `
+        -NoRebootOnCompletion:$false
+
+      # Note: Server will automatically reboot after promotion
+  when: >
+    dc_status.output | length > 0 and
+    dc_status.output[0] is not search("already_dc")
+  register: dc_promotion
+
+# IMPORTANT: Server reboots automatically after promotion!
+# Ansible will wait for it to come back online
+
+- name: Wait for server to come back online after promotion
+  ansible.builtin.wait_for_connection:
+    timeout: 900  # Wait up to 15 minutes
+    delay: 60     # Wait 60 seconds before first check
+  when: dc_promotion is changed
+
+# ------------------------------------------------------------------------------
+# STEP 3: Configure DNS Forwarders
+# ------------------------------------------------------------------------------
+# DNS forwarders handle queries for external domains (e.g., google.com)
+# Without these, your domain can't resolve internet addresses!
 
 - name: Configure DNS forwarders
-  ansible.windows.win_shell: |
-    Add-DnsServerForwarder -IPAddress {{ item }}
-  loop: "{{ dns_forwarders }}"
-  failed_when: false
-  changed_when: false
+  ansible.windows.win_powershell:
+    script: |
+      # Set DNS forwarders to external DNS servers
+      # This allows domain members to resolve internet domains
+      Set-DnsServerForwarder -IPAddress {{ dc_dns_forwarders | join(',') }}
+  when: dc_dns_forwarders is defined
 
-- name: Create Organizational Units
-  ansible.windows.win_shell: |
-    Import-Module ActiveDirectory
-    try {
-      New-ADOrganizationalUnit -Name "{{ item }}" -Path "DC={{ domain_name }},DC=local" -ErrorAction SilentlyContinue
-    } catch {
-      Write-Host "OU {{ item }} may already exist or creation failed: $_"
-    }
-  loop: "{{ organizational_units }}"
-  failed_when: false
-  changed_when: false
-
-- name: Wait for domain to be fully operational
-  ansible.windows.win_shell: |
-    Get-ADDomain -Identity "{{ domain_name }}.local"
-  register: domain_controller_domain_check
-  until: domain_controller_domain_check.rc == 0
+# ------------------------------------------------------------------------------
+# STEP 4: Verify Domain Controller is Ready
+# ------------------------------------------------------------------------------
+- name: Wait for Active Directory Web Services to be ready
+  ansible.windows.win_powershell:
+    script: |
+      $service = Get-Service -Name ADWS
+      if ($service.Status -eq 'Running') {
+        $Ansible.Changed = $false
+        exit 0
+      } else {
+        $Ansible.Failed = $true
+        Write-Error "ADWS service is not running"
+      }
+  register: adws_check
+  until: adws_check is succeeded
   retries: 10
   delay: 30
-  changed_when: false
+
+- name: Verify domain is functional
+  ansible.windows.win_powershell:
+    script: |
+      # Quick sanity check - can we query the domain?
+      $domain = Get-ADDomain
+      if ($domain.Name -eq "{{ dc_domain_netbios_name }}") {
+        Write-Output "Domain {{ dc_domain_name }} is ready!"
+        $Ansible.Changed = $false
+      } else {
+        Write-Error "Domain verification failed"
+        $Ansible.Failed = $true
+      }
+  register: domain_verify
+
+- name: Display domain verification results
+  ansible.builtin.debug:
+    msg: "{{ domain_verify.output }}"
+
+# ------------------------------------------------------------------------------
+# STEP 5: Configure Attack Surface (Optional)
+# ------------------------------------------------------------------------------
+# Students: These create intentional vulnerabilities for learning
+
+- name: Enable SMBv1 for vulnerability testing
+  ansible.windows.win_powershell:
+    script: |
+      # WARNING: SMBv1 is vulnerable to EternalBlue and other exploits
+      # Only enable in isolated lab environments!
+      Enable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol -NoRestart
+  when: enable_smbv1 | default(false)
+
+- name: Enable LLMNR and NetBIOS for responder attacks
+  ansible.windows.win_powershell:
+    script: |
+      # LLMNR and NetBIOS-NS can be exploited with tools like Responder
+      # to capture NTLMv2 hashes for offline cracking
+      #
+      # Students: Try using Responder to capture hashes!
+      # Defender practice: Disable these protocols
+
+      # Enable LLMNR (Link-Local Multicast Name Resolution)
+      New-ItemProperty -Path "HKLM:\SOFTWARE\Policies\Microsoft\Windows NT\DNSClient" `
+        -Name "EnableMulticast" -Value 1 -PropertyType DWORD -Force
+
+      # NetBIOS is enabled by default, just verify it's not disabled
+  when: enable_llmnr | default(false)
+
+# ==============================================================================
+# DOMAIN CONTROLLER SETUP COMPLETE!
+# ==============================================================================
+# At this point you should have a fully functional AD domain controller
+#
+# Students: Next steps:
+# 1. Create domain users (see create-domain-users.yml playbook)
+# 2. Join Windows member servers to the domain
+# 3. Join Linux machines to the domain
+# 4. Start practicing attacks!

@@ -1,3 +1,10 @@
 ---
-# Default variables for domain_users role
-# Override these in group_vars/all.yml
+# ==============================================================================
+# DOMAIN USERS ROLE - DEFAULT VARIABLES
+# ==============================================================================
+
+# Domain users and groups are inherited from group_vars/all.yml
+du_domain_name: "{{ domain_name }}"
+du_domain_netbios_name: "{{ domain_netbios_name }}"
+du_users: "{{ domain_users }}"
+du_groups: "{{ domain_groups }}"

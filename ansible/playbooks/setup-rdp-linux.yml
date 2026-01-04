@@ -1,103 +1,283 @@
 ---
-- name: Setup RDP (xrdp) on Linux servers
-  hosts: linux_members
-  become: true
+# ==============================================================================
+# SETUP RDP ON LINUX SERVERS (XRDP)
+# ==============================================================================
+# This playbook installs and configures xRDP for remote desktop access
+#
+# Students: xRDP allows you to RDP into Linux boxes just like Windows!
+#
+# What it does:
+# 1. Installs xRDP
+# 2. Configures xRDP to allow domain user connections
+# 3. Sets up firewall rules (if UFW is enabled)
+# 4. Starts and enables the xRDP service
+#
+# Expected runtime: 5-10 minutes (desktop environment is large)
+#
+# Usage:
+#   ansible-playbook playbooks/setup-rdp-linux.yml
+
+- name: Install and Configure xRDP on Linux Servers
+  hosts: linux_members  # All Linux/Ubuntu machines
+  become: true  # Run with sudo
   gather_facts: true
+
   vars:
-    domain_controller_ip: "{{ hostvars[groups['windows_dc'][0]]['internal_ip'] }}"
+    # Desktop environment to install
+    # XFCE is lightweight and fast (good for RDP)
+    desktop_environment: lxqt
+    xrdp_port: 3389
+
   tasks:
-    - name: Install xrdp and dependencies
+    # --------------------------------------------------------------------------
+    # STEP 1: Update Package Cache
+    # --------------------------------------------------------------------------
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+
+    # --------------------------------------------------------------------------
+    # STEP 2: Install xRDP Server
+    # --------------------------------------------------------------------------
+
+    - name: Install xRDP
       ansible.builtin.apt:
         name:
-          - xrdp
-          - xorgxrdp
+          - xrdp            # RDP server for Linux
+          - xorgxrdp        # X.Org drivers for xRDP
         state: present
-        update_cache: true
+      register: xrdp_install
+
+    # --------------------------------------------------------------------------
+    # STEP 3: Configure xRDP
+    # --------------------------------------------------------------------------
+
+    - name: Configure xRDP to use LXQT
+      ansible.builtin.copy:
+        dest: /etc/xrdp/startwm.sh
+        mode: '0755'
+        content: |
+          #!/bin/sh
+          # ==================================================================
+          # xRDP Session Startup Script
+          # ==================================================================
+          # Students: This script runs when you RDP into the Linux machine
+          # It starts the XFCE desktop environment
+
+          # Unset session manager to avoid conflicts
+          unset DBUS_SESSION_BUS_ADDRESS
+          unset XDG_RUNTIME_DIR
+
+          # Start XFCE session
+          if [ -r /etc/default/locale ]; then
+            . /etc/default/locale
+            export LANG LANGUAGE
+          fi
+
+          # Launch XFCE desktop
+          startlxqt
+      notify: Restart xrdp
+
+    - name: Configure xRDP port
+      ansible.builtin.lineinfile:
+        path: /etc/xrdp/xrdp.ini
+        regexp: '^port='
+        line: 'port={{ xrdp_port }}'
+        state: present
+      notify: Restart xrdp
+
+    - name: Allow domain users to access xRDP
+      ansible.builtin.lineinfile:
+        path: /etc/xrdp/sesman.ini
+        insertafter: '^\[Security\]'
+        line: 'AllowRootLogin=false'
+        state: present
+      notify: Restart xrdp
+
+    # --------------------------------------------------------------------------
+    # STEP 4: Configure SSL/TLS for xRDP
+    # --------------------------------------------------------------------------
 
     - name: Add xrdp user to ssl-cert group
       ansible.builtin.user:
         name: xrdp
         groups: ssl-cert
         append: true
-
-    - name: Configure xrdp to use local session
-      ansible.builtin.lineinfile:
-        path: /etc/xrdp/startwm.sh
-        insertbefore: '^test -x /etc/X11/Xsession'
-        line: 'unset DBUS_SESSION_BUS_ADDRESS'
-        backup: true
-
-    - name: Configure xrdp to start LXQT session
-      ansible.builtin.lineinfile:
-        path: /etc/xrdp/startwm.sh
-        insertbefore: '^test -x /etc/X11/Xsession'
-        line: 'startlxqt'
-        backup: true
-
-    - name: Configure xrdp.ini for better performance
-      ansible.builtin.lineinfile:
-        path: /etc/xrdp/xrdp.ini
-        regexp: "{{ item.regexp }}"
-        line: "{{ item.line }}"
-        backup: true
-      loop:
-        - { regexp: '^max_bpp=', line: 'max_bpp=128' }
-        - { regexp: '^xserverbpp=', line: 'xserverbpp=128' }
       notify: Restart xrdp
+      # This allows xRDP to use system SSL certificates
 
-    - name: Create .xsession file for domain users template
-      ansible.builtin.copy:
-        dest: /etc/skel/.xsession
-        mode: '0644'
-        content: |
-          #!/bin/bash
-          unset DBUS_SESSION_BUS_ADDRESS
-          unset XDG_RUNTIME_DIR
-          startlxqt
+    # --------------------------------------------------------------------------
+    # STEP 5: Configure Firewall (if UFW is active)
+    # --------------------------------------------------------------------------
 
-    - name: Configure polkit to allow colord for domain users
-      ansible.builtin.copy:
-        dest: /etc/polkit-1/localauthority/50-local.d/45-allow-colord.pkla
-        mode: '0644'
-        content: |
-          [Allow Colord all Users]
-          Identity=unix-user:*
-          Action=org.freedesktop.color-manager.create-device;org.freedesktop.color-manager.create-profile;org.freedesktop.color-manager.delete-device;org.freedesktop.color-manager.delete-profile;org.freedesktop.color-manager.modify-device;org.freedesktop.color-manager.modify-profile
-          ResultAny=no
-          ResultInactive=no
-          ResultActive=yes
-
-    - name: Enable and start xrdp service
-      ansible.builtin.systemd:
-        name: xrdp
-        enabled: true
-        state: started
-
-    - name: Check if UFW is installed
-      ansible.builtin.command: which ufw
-      register: ufw_check
-      failed_when: false
+    - name: Check if UFW is active
+      ansible.builtin.command: ufw status
+      register: ufw_status
       changed_when: false
+      failed_when: false
 
     - name: Allow RDP through UFW firewall
       community.general.ufw:
         rule: allow
-        port: '3389'
+        port: "{{ xrdp_port }}"
         proto: tcp
-        comment: 'Allow RDP'
-      when: ufw_check.rc == 0
+        comment: "xRDP - Remote Desktop"
+      when: "'active' in ufw_status.stdout"
 
-    - name: Verify xrdp is running
-      ansible.builtin.systemd:
+    # --------------------------------------------------------------------------
+    # STEP 6: Start and Enable xRDP Service
+    # --------------------------------------------------------------------------
+
+    - name: Enable and start xRDP service
+      ansible.builtin.service:
         name: xrdp
-      register: xrdp_status
+        state: started
+        enabled: true
 
-    - name: Display xrdp status
+    # --------------------------------------------------------------------------
+    # STEP 7: Create Desktop Session Config for Domain Users
+    # --------------------------------------------------------------------------
+
+    - name: Create .xsession file for domain users
+      ansible.builtin.copy:
+        dest: /etc/skel/.xsession
+        mode: '0644'
+        content: |
+          #!/bin/sh
+          # Default desktop session for new users
+          startlxqt
+      # Students: This file is copied to home dirs of new domain users
+
+    # --------------------------------------------------------------------------
+    # STEP 9: Verify Installation
+    # --------------------------------------------------------------------------
+
+    - name: Check xRDP service status
+      ansible.builtin.service:
+        name: xrdp
+        state: started
+      register: xrdp_service
+
+    - name: Verify xRDP is listening on port {{ xrdp_port }}
+      ansible.builtin.wait_for:
+        port: "{{ xrdp_port }}"
+        timeout: 10
+      register: port_check
+
+    - name: Display xRDP configuration
       ansible.builtin.debug:
-        msg: "xrdp service is {{ xrdp_status.status.ActiveState }} on {{ ansible_hostname }}"
+        msg:
+          - "=========================================="
+          - "xRDP Configuration Summary"
+          - "=========================================="
+          - "Server: {{ inventory_hostname }}"
+          - "IP Address: {{ ansible_host }}"
+          - "RDP Port: {{ xrdp_port }}"
+          - "Desktop Environment: XFCE"
+          - "Service Status: {{ xrdp_service.state }}"
+          - "Port Listening: {{ port_check is succeeded }}"
+          - "=========================================="
 
+  # Handlers run when notified by tasks above
   handlers:
     - name: Restart xrdp
-      ansible.builtin.systemd:
+      ansible.builtin.service:
         name: xrdp
         state: restarted
+
+  # Post-deployment instructions
+  post_tasks:
+    - name: Display connection instructions
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "xRDP Setup Complete!"
+          - "=========================================="
+          - ""
+          - "Connect to {{ inventory_hostname }}:"
+          - "  Host: {{ ansible_host }}"
+          - "  Port: {{ xrdp_port }}"
+          - "  Session: Xorg"
+          - "  Username: jdoe (domain user)"
+          - "  Password: UserPass123!"
+          - ""
+          - "From Windows:"
+          - "  mstsc /v:{{ ansible_host }}:{{ xrdp_port }}"
+          - ""
+          - "From Linux/Mac:"
+          - "  rdesktop {{ ansible_host }}:{{ xrdp_port }}"
+          - "  OR"
+          - "  xfreerdp /v:{{ ansible_host }} /u:jdoe /p:UserPass123!"
+          - ""
+          - "IMPORTANT: At login screen, select 'Xorg' session"
+          - ""
+          - "Troubleshooting:"
+          - "  Check logs: sudo journalctl -u xrdp -f"
+          - "  Test port: nc -zv {{ ansible_host }} {{ xrdp_port }}"
+          - ""
+          - "=========================================="
+
+# ==============================================================================
+# TROUBLESHOOTING xRDP
+# ==============================================================================
+#
+# Problem: Black screen after connecting
+# Solution:
+#   1. Make sure you selected "Xorg" session at login
+#   2. Check ~/.xsession-errors for error messages
+#   3. Verify XFCE is installed: dpkg -l | grep xfce
+#
+# Problem: "Connection refused"
+# Solution:
+#   1. Check service: sudo systemctl status xrdp
+#   2. Verify port: sudo netstat -tlnp | grep 3389
+#   3. Check firewall: sudo ufw status
+#
+# Problem: Can't login with domain account
+# Solution:
+#   1. Make sure Linux is joined to domain (run join-linux-domain.yml)
+#   2. Test user exists: getent passwd jdoe
+#   3. Check SSSD: sudo systemctl status sssd
+#   4. View auth logs: sudo tail -f /var/log/auth.log
+#
+# Problem: Performance is slow
+# Solution:
+#   1. Reduce color depth (16-bit instead of 24-bit)
+#   2. Disable desktop effects in XFCE settings
+#   3. Use a lighter window manager (try LXDE instead of XFCE)
+#
+# ==============================================================================
+# ATTACK SCENARIOS FOR STUDENTS
+# ==============================================================================
+#
+# 1. RDP CREDENTIAL HARVESTING
+#    - Capture credentials during xRDP authentication
+#    - Monitor /var/log/auth.log for login attempts
+#    - Extract session keys from memory
+#
+# 2. RDP SESSION HIJACKING
+#    - Attach to active xRDP sessions (requires root)
+#    - Use: sudo xrdp-sesadm -c=list
+#    - Hijack: sudo xrdp-sesadm -c=kill -s=<session_id>
+#
+# 3. LOCAL PRIVILEGE ESCALATION
+#    - Exploit xRDP misconfigurations
+#    - Attack .xsession or .xsessionrc files
+#    - Exploit desktop environment vulnerabilities
+#
+# 4. PERSISTENCE
+#    - Add startup scripts in ~/.config/autostart/
+#    - Modify /etc/xrdp/startwm.sh (requires root)
+#    - Create cron jobs for domain users
+#
+# 5. DEFENSE PRACTICE
+#    - Monitor xRDP logs: /var/log/xrdp*.log
+#    - Implement fail2ban for RDP brute force protection
+#    - Use SSH tunneling instead of direct RDP
+#    - Enable session recording/auditing
+#    - Restrict RDP access to specific IP ranges
+#
+# ==============================================================================

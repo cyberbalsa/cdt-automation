@@ -33,7 +33,7 @@ variable "flavor_name" {
 
 variable "keypair" {
   type    = string
-  default = "coredesktop"
+  default = "homefedora"
 }
 
 variable "external_network" {
@@ -43,12 +43,12 @@ variable "external_network" {
 
 variable "windows_count" {
   type    = number
-  default = 3
+  default = 2
 }
 
 variable "debian_count" {
   type    = number
-  default = 4
+  default = 2
 }
 
 variable "windows_hostnames" {

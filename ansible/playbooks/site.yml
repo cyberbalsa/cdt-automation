@@ -1,71 +1,279 @@
 ---
-- name: CDT Domain Setup - Display Information
+# ==============================================================================
+# MAIN SITE PLAYBOOK - COMPLETE LAB DEPLOYMENT
+# ==============================================================================
+# This is the master playbook that orchestrates the entire lab deployment
+#
+# Students: Run this to deploy everything in the correct order!
+#
+# What it does (in order):
+# 1. Validates inventory is generated correctly
+# 2. Sets up the Active Directory Domain Controller
+# 3. Creates domain users and groups
+# 4. Joins Windows member servers to the domain
+# 5. Joins Linux machines to the domain
+# 6. Configures RDP access on all machines
+#
+# Expected runtime: 30-45 minutes (includes multiple reboots)
+#
+# Prerequisites:
+# - OpenTofu infrastructure must be deployed (tofu apply)
+# - Inventory must be generated (python3 import-tofu-to-ansible.py)
+#
+# Usage:
+#   cd ansible
+#   ansible-playbook playbooks/site.yml
+
+# ==============================================================================
+# STEP 0: VALIDATE ENVIRONMENT
+# ==============================================================================
+
+- name: Validate Ansible Inventory and Environment
   hosts: localhost
   gather_facts: false
+  connection: local
+
   tasks:
-    - name: Display setup information
+    - name: Load global variables
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../group_vars/all.yml"
+
+    - name: Check if inventory file exists
+      ansible.builtin.stat:
+        path: "{{ playbook_dir }}/../inventory/production.ini"
+      register: inventory_file_stat
+
+    - name: Fail if inventory doesn't exist
+      ansible.builtin.fail:
+        msg: |
+          ERROR: Inventory file not found!
+
+          The inventory file is missing. You need to generate it first.
+
+          Run this command from the project root:
+            python3 import-tofu-to-ansible.py
+
+          This script reads OpenTofu outputs and creates the Ansible inventory.
+      when: not inventory_file_stat.stat.exists
+
+    - name: Verify required groups exist in inventory
+      ansible.builtin.assert:
+        that:
+          - groups['windows'] is defined
+          - groups['windows_dc'] is defined
+          - groups['linux_members'] is defined
+        fail_msg: |
+          ERROR: Required inventory groups are missing!
+
+          Expected groups: windows, windows_dc, linux_members
+
+          Current groups: {{ groups.keys() | list }}
+
+          Solution: Regenerate inventory with:
+            python3 import-tofu-to-ansible.py
+
+    - name: Verify groups have hosts
+      ansible.builtin.assert:
+        that:
+          - groups['windows'] | length > 0
+          - groups['windows_dc'] | length > 0
+          - groups['linux_members'] | length > 0
+        fail_msg: |
+          ERROR: Inventory groups are empty!
+
+          This usually means:
+          1. OpenTofu hasn't been deployed yet (run: cd opentofu && tofu apply)
+          2. OpenTofu state has no VMs
+          3. Inventory generation script failed
+
+          Debug with:
+            cd opentofu && tofu output -json
+
+    - name: Display deployment plan
       ansible.builtin.debug:
         msg:
-          - "Starting CDT Domain Setup"
-          - "Domain Controller: {{ hostvars[groups['windows'][0]]['internal_ip'] }}"
-          - "Windows Members: {{ groups['windows_members'] | map('extract', hostvars, 'internal_ip') | join(', ') }}"
-          - "Linux Members: {{ groups['linux_members'] | map('extract', hostvars, 'internal_ip') | join(', ') }}"
-          - "Domain: CDT.local"
+          - "=========================================="
+          - "CDT Automation Lab Deployment"
+          - "=========================================="
+          - ""
+          - "Infrastructure Overview:"
+          - "  Domain: {{ domain_name }}"
+          - "  Windows VMs: {{ groups['windows'] | length }}"
+          - "    - Domain Controller: {{ groups['windows_dc'][0] }}"
+          - "    - Member Servers: {{ groups['windows_members'] | length }}"
+          - "  Linux VMs: {{ groups['linux_members'] | length }}"
+          - ""
+          - "Deployment Steps:"
+          - "  1. Setup Domain Controller (15-20 min)"
+          - "  2. Create Domain Users (2-3 min)"
+          - "  3. Join Windows Members (5-10 min each)"
+          - "  4. Join Linux Members (5-10 min each)"
+          - "  5. Configure RDP (5 min)"
+          - ""
+          - "Estimated Total Time: 30-45 minutes"
+          - ""
+          - "=========================================="
 
-- name: Setup Domain Controller
+# ==============================================================================
+# STEP 1: SETUP DOMAIN CONTROLLER
+# ==============================================================================
+# This is the foundation - everything else depends on this!
+
+- name: Setup Active Directory Domain Controller
   import_playbook: setup-domain-controller.yml
+  tags: ['dc', 'domain_controller', 'ad']
 
-- name: Join Windows Servers to Domain
-  import_playbook: join-windows-domain.yml
+# ==============================================================================
+# STEP 2: CREATE DOMAIN USERS AND GROUPS
+# ==============================================================================
 
-- name: Activate Windows using KMS
-  import_playbook: activate-windows-kms.yml
-
-- name: Join Linux Servers to Domain
-  import_playbook: join-linux-domain.yml
-
-- name: Create Domain Users
+- name: Create Domain Users and Groups
   import_playbook: create-domain-users.yml
+  tags: ['users', 'domain_users', 'ad']
 
-- name: Setup RDP on Linux Servers
-  import_playbook: setup-rdp-linux.yml
+# ==============================================================================
+# STEP 3: JOIN WINDOWS MEMBER SERVERS TO DOMAIN
+# ==============================================================================
+# Note: This step is skipped if you only have 1 Windows VM (just the DC)
+
+- name: Join Windows Member Servers to Domain
+  import_playbook: join-windows-domain.yml
+  when: groups['windows_members'] | length > 0
+  tags: ['windows', 'domain_join']
+
+# ==============================================================================
+# STEP 4: JOIN LINUX MACHINES TO DOMAIN
+# ==============================================================================
+
+- name: Join Linux Machines to Domain
+  import_playbook: join-linux-domain.yml
+  tags: ['linux', 'domain_join']
+
+# ==============================================================================
+# STEP 5: CONFIGURE REMOTE DESKTOP ACCESS
+# ==============================================================================
 
 - name: Setup RDP on Windows Servers
   import_playbook: setup-rdp-windows.yml
+  tags: ['rdp', 'windows', 'remote_access']
 
-- name: Final verification and summary
+- name: Setup xRDP on Linux Servers
+  import_playbook: setup-rdp-linux.yml
+  tags: ['rdp', 'xrdp', 'linux', 'remote_access']
+
+# ==============================================================================
+# FINAL STEP: DEPLOYMENT SUMMARY
+# ==============================================================================
+
+- name: Display Deployment Summary
   hosts: localhost
   gather_facts: false
+  connection: local
+
   tasks:
-    - name: Display completion message
+    - name: Show completion message
       ansible.builtin.debug:
         msg:
-          - "CDT Domain setup completed successfully!"
+          - "=========================================="
+          - "CDT AUTOMATION LAB DEPLOYMENT COMPLETE!"
+          - "=========================================="
           - ""
-          - "Domain Controller: {{ hostvars[groups['windows'][0]]['internal_ip'] }} (CDT.local)"
-          - "Windows Members: {{ groups['windows_members'] | map('extract', hostvars, 'internal_ip') | join(', ') }}"
-          - "Linux Members: {{ groups['linux_members'] | map('extract', hostvars, 'internal_ip') | join(', ') }}"
+          - "Your attack/defend lab is ready!"
           - ""
-          - "Created Users:"
-          - "  - jdoe (John Doe)"
-          - "  - asmith (Alice Smith)"
-          - "  - bwilson (Bob Wilson)"
-          - "  - mjohnson (Mary Johnson)"
-          - "  - dlee (David Lee)"
+          - "DOMAIN INFORMATION:"
+          - "  Domain: {{ domain_name }}"
+          - "  Domain Controller: {{ groups['windows_dc'][0] }}"
+          - "  DC IP: {{ hostvars[groups['windows_dc'][0]]['ansible_host'] }}"
           - ""
-          - "SSH Access:"
-          - "  - All users can SSH to Linux boxes using: username@CDT.local"
-          - "  - Linux Admins (jdoe, asmith) have sudo access"
-          - "  - Password authentication enabled for domain users"
+          - "DOMAIN ACCOUNTS (all passwords: UserPass123!):"
+          - "  - jdoe (regular user)"
+          - "  - asmith (Domain Admin - high value target!)"
+          - "  - bwilson (regular user)"
+          - "  - mjohnson (Accounting)"
+          - "  - dlee (Engineering)"
           - ""
-          - "RDP Access:"
-          - "  - Linux boxes: RDP enabled on port 3389 (xrdp with LXQT)"
-          - "  - Windows boxes: RDP enabled on port 3389"
-          - "  - Domain users can RDP using: username@CDT.local"
-          - "  - Use external IPs to connect from outside the network"
+          - "RDP ACCESS:"
+          - "  Windows: mstsc /v:<ip>:3389"
+          - "  Linux: xfreerdp /v:<ip>:3389 /u:jdoe /p:UserPass123!"
           - ""
-          - "Next Steps:"
-          - "  1. Test SSH: ssh jdoe@CDT.local@{{ hostvars[groups['linux_members'][0]]['internal_ip'] }}"
-          - "  2. Test RDP: Connect to {{ hostvars[groups['linux_members'][0]]['ansible_host'] }}:3389"
-          - "  3. Verify domain join: realm list (on Linux boxes)"
-          - "  4. Check Windows domain membership in Computer Properties"
+          - "SSH ACCESS (Linux only):"
+          - "  ssh jdoe@<linux_ip>"
+          - ""
+          - "NEXT STEPS FOR STUDENTS:"
+          - "  1. RDP into the domain controller"
+          - "  2. Verify Active Directory Users and Computers"
+          - "  3. Test domain user login on member servers"
+          - "  4. Start practicing attack techniques!"
+          - ""
+          - "ATTACK SCENARIOS TO TRY:"
+          - "  - BloodHound domain mapping"
+          - "  - Kerberoasting"
+          - "  - Pass-the-hash attacks"
+          - "  - Credential dumping with mimikatz"
+          - "  - Lateral movement between systems"
+          - "  - Privilege escalation"
+          - ""
+          - "DEFENSE SCENARIOS TO TRY:"
+          - "  - Enable logging and monitoring"
+          - "  - Implement account lockout policies"
+          - "  - Configure Windows Defender"
+          - "  - Set up honeypot accounts"
+          - "  - Practice log analysis"
+          - ""
+          - "=========================================="
+          - ""
+          - "Documentation: See ansible/README.md"
+          - "Troubleshooting: Check individual playbook comments"
+          - ""
+          - "Happy Hacking! (Responsibly)"
+          - "=========================================="
+
+# ==============================================================================
+# RUNNING INDIVIDUAL PLAYBOOKS
+# ==============================================================================
+#
+# Students: You can run individual playbooks for testing or re-configuration
+#
+# Run only DC setup:
+#   ansible-playbook playbooks/setup-domain-controller.yml
+#
+# Run only user creation:
+#   ansible-playbook playbooks/create-domain-users.yml
+#
+# Run only Windows domain join:
+#   ansible-playbook playbooks/join-windows-domain.yml
+#
+# Run only Linux domain join:
+#   ansible-playbook playbooks/join-linux-domain.yml
+#
+# Run only RDP setup:
+#   ansible-playbook playbooks/setup-rdp-windows.yml
+#   ansible-playbook playbooks/setup-rdp-linux.yml
+#
+# Use tags to run specific sections:
+#   ansible-playbook playbooks/site.yml --tags dc
+#   ansible-playbook playbooks/site.yml --tags users
+#   ansible-playbook playbooks/site.yml --tags rdp
+#
+# Skip specific sections:
+#   ansible-playbook playbooks/site.yml --skip-tags linux
+#
+# ==============================================================================
+# RECOVERY AND REBUILDING
+# ==============================================================================
+#
+# If something goes wrong and you need to rebuild:
+#
+# 1. Destroy and rebuild specific VM (from project root):
+#    ./rebuild-vm.sh <vm_ip>
+#
+# 2. Destroy all infrastructure and start over:
+#    cd opentofu && tofu destroy
+#    tofu apply
+#    cd .. && python3 import-tofu-to-ansible.py
+#    cd ansible && ansible-playbook playbooks/site.yml
+#
+# 3. Re-run just the failed playbook:
+#    ansible-playbook playbooks/<playbook_name>.yml
+#
+# ==============================================================================

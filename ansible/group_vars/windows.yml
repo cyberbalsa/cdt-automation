@@ -1,5 +1,77 @@
 ---
 # ==============================================================================
-# Windows-specific Variables
+# WINDOWS-SPECIFIC VARIABLES
 # ==============================================================================
-# Add Windows-specific variables here if needed
+# These settings apply to ALL Windows hosts (domain controller + members)
+# Students: These control how Ansible connects to Windows over WinRM
+
+# ------------------------------------------------------------------------------
+# WINRM CONNECTION SETTINGS
+# ------------------------------------------------------------------------------
+# WinRM = Windows Remote Management (similar to SSH for Windows)
+
+# Connection method: winrm (Windows Remote Management)
+ansible_connection: winrm
+
+# Authentication: NTLM (works for local and domain accounts)
+ansible_winrm_transport: ntlm
+
+# Ignore SSL certificate validation (safe for lab, not production!)
+ansible_winrm_server_cert_validation: ignore
+
+# SOCKS5 proxy for WinRM connections through the jump host
+# This tunnels WinRM traffic through ssh.cyberrange.rit.edu
+ansible_winrm_proxy: socks5h://ssh.cyberrange.rit.edu:1080
+
+# ------------------------------------------------------------------------------
+# WINDOWS FEATURES TO INSTALL
+# ------------------------------------------------------------------------------
+# Students: Add/remove features for different attack scenarios
+
+# Features to install on all Windows machines
+windows_common_features:
+  - name: TelnetClient
+    state: present
+  - name: SNMP-Service
+    state: present
+
+# ------------------------------------------------------------------------------
+# RDP (REMOTE DESKTOP) CONFIGURATION
+# ------------------------------------------------------------------------------
+# Enable RDP on all Windows hosts for remote access
+
+# RDP settings
+rdp_enabled: true
+rdp_port: 3389
+
+# Allow RDP connections from any host (change for security scenarios)
+rdp_allow_connections: true
+
+# Network Level Authentication (disable for easier testing)
+# Students: Try enabling this for credential relay attack practice!
+rdp_nla_enabled: false
+
+# ------------------------------------------------------------------------------
+# WINDOWS DEFENDER SETTINGS
+# ------------------------------------------------------------------------------
+# Students: Modify these for attack/defense exercises
+
+# Disable Windows Defender for testing (re-enable for defense scenarios)
+windows_defender_disabled: true
+
+# Real-time protection (turn off for easier attack practice)
+windows_defender_realtime_protection: false
+
+# ------------------------------------------------------------------------------
+# FIREWALL SETTINGS
+# ------------------------------------------------------------------------------
+# Students: Useful for network security scenarios
+
+# Firewall state (enable for defense exercises)
+windows_firewall_enabled: false
+
+# Firewall profiles to configure
+windows_firewall_profiles:
+  - Domain
+  - Private
+  - Public

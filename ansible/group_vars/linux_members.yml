@@ -1,25 +1,140 @@
 ---
 # ==============================================================================
-# Kerberos Configuration
+# LINUX DOMAIN MEMBER VARIABLES
 # ==============================================================================
-kerberos_ticket_lifetime: "24h"
-kerberos_renew_lifetime: "7d"
+# These settings configure Linux machines to join the Windows Active Directory
+# Students: Linux + AD integration is great for mixed-environment attacks!
 
-# ==============================================================================
-# Linux PAM Configuration
-# ==============================================================================
-pam_mkhomedir_skel: "/etc/skel"
-pam_mkhomedir_umask: "077"
+# ------------------------------------------------------------------------------
+# KERBEROS CONFIGURATION
+# ------------------------------------------------------------------------------
+# Kerberos is the authentication protocol used by Active Directory
 
-# ==============================================================================
-# SSSD Configuration
-# ==============================================================================
-sssd_fallback_homedir: "/home/%u@%d"
-sssd_default_shell: "/bin/bash"
+# Kerberos realm (must be UPPERCASE of domain_name)
+kerberos_realm: CDT.LOCAL
 
-# ==============================================================================
-# SSH Configuration
-# ==============================================================================
+# Kerberos KDC (Key Distribution Center) - this is the domain controller
+# The playbook sets this dynamically to the DC's internal IP
+# kerberos_kdc: 10.10.10.21
+
+# Kerberos admin server (same as KDC for simple setups)
+# kerberos_admin_server: 10.10.10.21
+
+# ------------------------------------------------------------------------------
+# SSSD CONFIGURATION
+# ------------------------------------------------------------------------------
+# SSSD = System Security Services Daemon
+# This handles authentication against Active Directory on Linux
+
+# SSSD should enumerate users (show domain users in 'getent passwd')
+sssd_enumerate: true
+
+# Cache credentials for offline login
+sssd_cache_credentials: true
+
+# Use fully qualified names (username@CDT.local) or simple names
+sssd_use_fully_qualified_names: false
+
+# Automatically create home directories on first login
+sssd_auto_create_home: true
+
+# Default shell for domain users
+sssd_default_shell: /bin/bash
+
+# ------------------------------------------------------------------------------
+# SSH CONFIGURATION FOR DOMAIN USERS
+# ------------------------------------------------------------------------------
+# Allow domain users to SSH into Linux machines
+
+# Enable password authentication (set false for key-only access)
+ssh_password_authentication: true
+
+# Enable Kerberos authentication (GSSAPI)
+ssh_gssapi_authentication: true
+
+# Allow domain users to login
+ssh_allow_domain_users: true
+
+# SSH access control - which domain groups can SSH in
+# Students: Modify this for access control scenarios
 ssh_allowed_groups:
-  - "ssh users"
-  - "linux admins"
+  - "Domain Users"
+  - "IT Staff"
+
+# ------------------------------------------------------------------------------
+# SAMBA CONFIGURATION
+# ------------------------------------------------------------------------------
+# Samba allows Linux to participate in Windows file sharing
+
+# Workgroup (NetBIOS domain name)
+samba_workgroup: CDT
+
+# Samba should use AD for authentication
+samba_security: ADS
+
+# Automatically create shares for user home directories
+samba_create_home_shares: true
+
+# ------------------------------------------------------------------------------
+# XRDP CONFIGURATION (REMOTE DESKTOP FOR LINUX)
+# ------------------------------------------------------------------------------
+# Students: RDP into Linux boxes just like Windows!
+
+# Enable xrdp service
+xrdp_enabled: true
+
+# RDP port (3389 is standard)
+xrdp_port: 3389
+
+# Desktop environment to use (XFCE is lightweight and fast)
+xrdp_desktop_environment: xfce4
+
+# Allow domain users to RDP
+xrdp_allow_domain_users: true
+
+# SSL/TLS settings (use high encryption for RDP)
+xrdp_ssl_protocol: TLSv1.2
+
+# ------------------------------------------------------------------------------
+# ATTACK SURFACE CONFIGURATION
+# ------------------------------------------------------------------------------
+# Students: These create intentional vulnerabilities
+
+# Install vulnerable services for practice
+install_vulnerable_services: true
+
+# Services to install (students can attack these)
+vulnerable_services:
+  - vsftpd       # FTP server (plaintext credentials!)
+  - telnetd      # Telnet (unencrypted remote access)
+  # - apache2    # Web server (add for web app attacks)
+  # - mysql      # Database (SQL injection practice)
+
+# Enable root login via SSH (dangerous in production!)
+ssh_permit_root_login: false  # Keep this false even in labs
+
+# ------------------------------------------------------------------------------
+# PAM CONFIGURATION
+# ------------------------------------------------------------------------------
+# PAM = Pluggable Authentication Modules
+# Required for AD authentication to work
+
+# Enable PAM mkhomedir (auto-create home directories)
+pam_mkhomedir_enabled: true
+
+# PAM session options
+pam_umask: "0077"  # Default file permissions for new users
+
+# ------------------------------------------------------------------------------
+# LOGGING
+# ------------------------------------------------------------------------------
+# Students: Enable for defensive/forensics practice
+
+# Enable detailed auth logging
+enable_auth_logging: true
+
+# Log all commands (great for forensics exercises)
+enable_command_logging: false  # Disable by default (performance impact)
+
+# Syslog server (optional - send logs to centralized server)
+# syslog_server: 10.10.10.100

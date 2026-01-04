@@ -1,64 +1,118 @@
 ---
-- name: Create domain users and groups
-  hosts: windows_dc
-  gather_facts: false
+# ==============================================================================
+# CREATE DOMAIN USERS AND GROUPS
+# ==============================================================================
+# This playbook creates user accounts and groups in Active Directory
+#
+# Students: Run this AFTER the domain controller is set up
+#
+# What it does:
+# 1. Creates domain groups (IT Staff, Accounting, Engineering, etc.)
+# 2. Creates domain user accounts with passwords
+# 3. Assigns users to appropriate groups
+# 4. Displays summary of created accounts
+#
+# Expected runtime: 2-3 minutes
+#
+# Usage:
+#   ansible-playbook playbooks/create-domain-users.yml
+
+- name: Create Active Directory Users and Groups
+  hosts: windows_dc  # Run on the domain controller
+  gather_facts: true
+
+  pre_tasks:
+    - name: Load global variables
+      ansible.builtin.include_vars:
+        file: "../group_vars/all.yml"
+
+    - name: Load domain controller variables
+      ansible.builtin.include_vars:
+        file: "../group_vars/windows_dc.yml"
+
+    - name: Display configuration
+      ansible.builtin.debug:
+        msg:
+          - "==================================================="
+          - "Creating domain users and groups"
+          - "Domain: {{ domain_name }}"
+          - "Users to create: {{ domain_users | length }}"
+          - "Groups to create: {{ domain_groups | length }}"
+          - "==================================================="
+
+    - name: Verify AD services are running
+      ansible.windows.win_service:
+        name: ADWS  # Active Directory Web Services
+        state: started
+      register: adws_status
+      ignore_errors: true
+      when: not ansible_check_mode
+
+  # Main tasks: Execute the domain_users role
   roles:
-    - domain_users
+    - role: domain_users
 
-- name: Configure Linux servers for SSH access with AD groups
-  hosts: linux_members
-  become: true
-  tasks:
-    - name: Configure SSH to allow specific AD groups
-      ansible.builtin.blockinfile:
-        path: /etc/ssh/sshd_config
-        block: |
-          # Allow specific Active Directory groups and local admin user
-          AllowGroups cyberrange sudo {{ ssh_allowed_groups |
-                                         map('regex_replace', '^(.*)$', '\\1@' + domain_name + '.local') |
-                                         map('regex_replace', ' ', '\\ ') |
-                                         join(' ') }}
-        marker: "# {mark} ANSIBLE MANAGED BLOCK - AD Groups"
-        backup: true
-      notify: Restart ssh
+  # Post-deployment tasks
+  post_tasks:
+    - name: Configure SSH access for domain users on Linux
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "Domain Users Created Successfully!"
+          - "=========================================="
+          - ""
+          - "Next steps:"
+          - "1. These users can now log in to Windows machines"
+          - "2. Run join-linux-domain.yml if you haven't already"
+          - "3. Domain users can SSH to Linux machines after domain join"
+          - ""
+          - "Test Windows login (RDP):"
+          - "  Username: CDT\\jdoe"
+          - "  Password: UserPass123!"
+          - ""
+          - "Test Linux SSH login:"
+          - "  ssh jdoe@<linux_ip>"
+          - "  Password: UserPass123!"
+          - ""
+          - "Domain Admin account (high privilege):"
+          - "  Username: CDT\\asmith"
+          - "  Password: UserPass123!"
+          - ""
+          - "=========================================="
 
-    - name: Configure sudo access for Linux Admins group
-      ansible.builtin.lineinfile:
-        path: /etc/sudoers.d/linux_admins
-        line: "%linux\\ admins@{{ domain_name }}.local ALL=(ALL) NOPASSWD:ALL"
-        create: true
-        mode: '0440'
-        validate: 'visudo -cf %s'
-
-    - name: Configure SSSD to use simple names for specific groups
-      ansible.builtin.lineinfile:
-        path: /etc/sssd/sssd.conf
-        regexp: '^use_fully_qualified_names'
-        line: 'use_fully_qualified_names = False'
-        backup: true
-      notify: Restart sssd
-
-    - name: Add simple_allow_groups to SSSD config
-      ansible.builtin.lineinfile:
-        path: /etc/sssd/sssd.conf
-        line: 'simple_allow_groups = {{ ssh_allowed_groups | join(", ") }}'
-        insertafter: 'access_provider = ad'
-        backup: true
-      notify: Restart sssd
-
-    - name: Test SSH configuration
-      ansible.builtin.command: sshd -t
-      register: sshd_test
-      failed_when: sshd_test.rc != 0
-      changed_when: false
-
-  handlers:
-    - name: Restart ssh
-      ansible.builtin.systemd:
-        name: ssh
-        state: restarted
-
-    - name: Restart sssd
-      ansible.builtin.systemd:
-        name: sssd
-        state: restarted
+# ==============================================================================
+# CUSTOMIZING USERS FOR STUDENTS
+# ==============================================================================
+#
+# To add more users, edit: ansible/group_vars/all.yml
+#
+# Example - add a new user:
+#
+# domain_users:
+#   - username: tstark
+#     firstname: Tony
+#     surname: Stark
+#     password: IAmIronMan123!
+#     groups:
+#       - Domain Users
+#       - Engineering
+#       - Domain Admins  # Make them an admin
+#
+# Then re-run this playbook: ansible-playbook playbooks/create-domain-users.yml
+#
+# ==============================================================================
+# PASSWORD POLICY MODIFICATION
+# ==============================================================================
+#
+# Students: Want to practice password attacks? Configure weak password policy:
+#
+# On Domain Controller (PowerShell):
+#   Set-ADDefaultDomainPasswordPolicy `
+#     -Identity CDT.local `
+#     -MinPasswordLength 1 `
+#     -ComplexityEnabled $false `
+#     -MaxPasswordAge 0
+#
+# WARNING: Only do this in isolated lab environments!
+#
+# ==============================================================================

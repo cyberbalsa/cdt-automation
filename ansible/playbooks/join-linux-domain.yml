@@ -1,8 +1,251 @@
 ---
-- name: Join Linux servers to domain
-  hosts: linux_members
-  become: true
+# ==============================================================================
+# JOIN LINUX MACHINES TO ACTIVE DIRECTORY DOMAIN
+# ==============================================================================
+# This playbook joins Ubuntu Linux machines to the Windows AD domain
+#
+# Students: This creates a mixed Windows/Linux environment!
+# Real-world scenario: Many enterprises run both Windows and Linux
+#
+# Prerequisites:
+# 1. Domain controller must be running (setup-domain-controller.yml completed)
+# 2. DNS must be resolvable from Linux machines
+# 3. Time sync is critical (Kerberos requires <5 min time difference)
+#
+# What it does:
+# 1. Installs realmd, sssd, Kerberos packages
+# 2. Configures DNS to use domain controller
+# 3. Joins machine to AD using realm command
+# 4. Configures SSSD for authentication
+# 5. Enables SSH access for domain users
+# 6. Grants sudo to specified domain admins
+#
+# Expected runtime: 5-10 minutes per server
+#
+# Usage:
+#   ansible-playbook playbooks/join-linux-domain.yml
+
+- name: Join Linux Machines to Active Directory Domain
+  hosts: linux_members  # All Linux VMs (Debian/Ubuntu)
+  become: true  # Run tasks with sudo
+  gather_facts: true
+
   vars:
-    domain_controller_ip: "{{ hostvars[groups['windows_dc'][0]]['internal_ip'] }}"
+    # Get the domain controller's internal IP dynamically
+    dc_internal_ip: "{{ hostvars[groups['windows_dc'][0]]['internal_ip'] }}"
+
+  pre_tasks:
+    - name: Load global variables
+      ansible.builtin.include_vars:
+        file: "../group_vars/all.yml"
+
+    - name: Load Linux member variables
+      ansible.builtin.include_vars:
+        file: "../group_vars/linux_members.yml"
+
+    - name: Display target information
+      ansible.builtin.debug:
+        msg:
+          - "==================================================="
+          - "Joining {{ inventory_hostname }} to domain {{ domain_name }}"
+          - "Domain Controller: {{ groups['windows_dc'][0] }} ({{ dc_internal_ip }})"
+          - "Image: {{ debian_image_name | default('Ubuntu') }}"
+          - "==================================================="
+
+    # Sanity checks before we start
+    - name: Verify domain controller exists
+      ansible.builtin.assert:
+        that:
+          - groups['windows_dc'] is defined
+          - groups['windows_dc'] | length > 0
+        fail_msg: "No domain controller found! Run setup-domain-controller.yml first"
+
+    # ------------------------------------------------------------------------------
+    # STEP 1: Configure Timezone and Time Synchronization
+    # ------------------------------------------------------------------------------
+    # Critical: Kerberos requires time sync within 5 minutes
+
+    - name: Set timezone to America/New_York
+      community.general.timezone:
+        name: America/New_York
+      register: timezone_result
+
+    - name: Install chrony for time synchronization
+      ansible.builtin.apt:
+        name: chrony
+        state: present
+        update_cache: true
+
+    - name: Restart chrony service
+      ansible.builtin.systemd:
+        name: chrony
+        state: restarted
+        enabled: true
+
+    - name: Force time sync with domain controller
+      ansible.builtin.shell: |
+        chronyc -a makestep
+        chronyc sources
+      register: chrony_sync
+      changed_when: false
+      ignore_errors: true
+
+
+    - name: Display current time
+      ansible.builtin.command: date
+      register: current_time
+      changed_when: false
+
+    - name: Show time sync status
+      ansible.builtin.debug:
+        msg:
+          - "Current system time: {{ current_time.stdout }}"
+          - "Chrony sources: {{ chrony_sync.stdout_lines }}"
+
+    - name: Reboot to apply timezone and clear state
+      ansible.builtin.reboot:
+        reboot_timeout: 600
+        msg: "Rebooting to apply timezone and prepare for domain join"
+      when: timezone_result.changed
+
+    - name: Wait for system to stabilize after reboot
+      ansible.builtin.pause:
+        seconds: 30
+      when: timezone_result.changed
+
+  # Main tasks: Execute the linux_domain_member role
   roles:
-    - linux_domain_member
+    - role: linux_domain_member
+
+  # Post-deployment verification and testing
+  post_tasks:
+    - name: Verify domain join status
+      ansible.builtin.command: realm list
+      register: realm_status
+      changed_when: false
+
+    - name: Display domain membership
+      ansible.builtin.debug:
+        msg: "{{ realm_status.stdout_lines }}"
+
+    - name: Test domain user lookup
+      ansible.builtin.shell: |
+        # Try to look up a domain user
+        getent passwd {{ domain_users[0].username }} || echo "User lookup failed"
+      register: user_lookup
+      changed_when: false
+      when: domain_users is defined and domain_users | length > 0
+
+    - name: Display user lookup result
+      ansible.builtin.debug:
+        msg: "{{ user_lookup.stdout_lines }}"
+      when: user_lookup.stdout is defined
+
+    - name: Check SSH configuration
+      ansible.builtin.command: grep -E "^PasswordAuthentication|^GSSAPIAuthentication" /etc/ssh/sshd_config
+      register: ssh_config_check
+      changed_when: false
+
+    - name: Display SSH settings
+      ansible.builtin.debug:
+        msg:
+          - "SSH Configuration:"
+          - "{{ ssh_config_check.stdout_lines }}"
+
+    - name: Display post-deployment instructions
+      ansible.builtin.debug:
+        msg:
+          - "=========================================="
+          - "Linux Domain Join Complete!"
+          - "=========================================="
+          - ""
+          - "Domain: {{ domain_name }}"
+          - "This machine: {{ inventory_hostname }}"
+          - "IP: {{ ansible_host }}"
+          - ""
+          - "Test SSH access with domain users:"
+          - "  ssh jdoe@{{ ansible_host }}"
+          - "  OR"
+          - "  ssh jdoe@{{ domain_name }}@{{ ansible_host }}"
+          - ""
+          - "Domain admins with sudo access:"
+          - "  {% for admin in linux_admins %}{{ admin }} {% endfor %}"
+          - ""
+          - "Verify Kerberos tickets after login:"
+          - "  klist"
+          - ""
+          - "=========================================="
+
+# ==============================================================================
+# TROUBLESHOOTING FOR STUDENTS
+# ==============================================================================
+#
+# Problem: "Failed to join domain: Failed to find realm"
+# Solution:
+#   1. Check DNS: nslookup {{ domain_name }}
+#   2. Verify DC is running: ping {{ dc_internal_ip }}
+#   3. Check /etc/resolv.conf points to DC
+#
+# Problem: "Authentication failed" when running realm join
+# Solution:
+#   1. Verify domain admin credentials in group_vars/all.yml
+#   2. Check password hasn't expired on DC
+#   3. Try manual join: sudo realm join -U {{ domain_admin_user }} {{ domain_name }} -v
+#
+# Problem: "Clock skew too great" error
+# Solution:
+#   1. Install chrony: sudo apt install chrony
+#   2. Sync time: sudo chronyc makestep
+#   3. Check time: date
+#
+# Problem: Can't SSH with domain account
+# Solution:
+#   1. Check user exists: getent passwd jdoe
+#   2. Verify SSSD: sudo systemctl status sssd
+#   3. Check SSH config: grep -i password /etc/ssh/sshd_config
+#   4. View auth logs: sudo tail -f /var/log/auth.log
+#
+# Problem: "Permission denied" for sudo
+# Solution:
+#   1. Check if user is in linux_admins list (group_vars/all.yml)
+#   2. Verify sudoers file: sudo cat /etc/sudoers.d/domain_admins
+#   3. Test sudo: sudo -l (shows allowed commands)
+#
+# ==============================================================================
+# ATTACK SCENARIOS FOR STUDENTS
+# ==============================================================================
+#
+# 1. CREDENTIAL THEFT
+#    - Steal Kerberos tickets: ls -la /tmp/krb5*
+#    - Extract from SSSD cache: /var/lib/sss/db/
+#    - Capture with mimipenguin or similar tools
+#
+# 2. PRIVILEGE ESCALATION
+#    - Exploit weak sudo configuration
+#    - Attack SSSD for privilege elevation
+#    - Abuse Linux-specific misconfigurations
+#
+# 3. LATERAL MOVEMENT
+#    - Use compromised Linux box to attack Windows machines
+#    - Kerberos ticket reuse across platforms
+#    - NFS/SMB share enumeration with domain creds
+#
+# 4. PERSISTENCE
+#    - Add SSH keys for domain users
+#    - Create cron jobs as domain user
+#    - Modify PAM configuration
+#    - Add backdoor users to local system
+#
+# 5. DEFENSE PRACTICE
+#    - Monitor auth.log for suspicious logins
+#    - Implement fail2ban for brute force protection
+#    - Restrict sudo to specific commands
+#    - Enable SELinux/AppArmor
+#    - Configure audit daemon (auditd)
+#
+# ==============================================================================
+
+# Sources for Linux AD integration:
+# - [Ubuntu SSSD Active Directory Documentation](https://documentation.ubuntu.com/server/how-to/sssd/with-active-directory/)
+# - [Server World - Ubuntu 24.04 Realmd](https://www.server-world.info/en/note?os=Ubuntu_24.04&p=realmd)
+# - [Ubuntu AD Integration Blog](https://blog.linux-ng.de/2024/08/26/joining-ubuntu-client-to-active-directory/)

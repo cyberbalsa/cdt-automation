@@ -1,54 +1,117 @@
 ---
 # ==============================================================================
-# Domain Configuration
+# GLOBAL VARIABLES - APPLY TO ALL HOSTS
 # ==============================================================================
-domain_name: "CDT"
-domain_admin_user: "Administrator"
-domain_admin_password: "Cyberrange123!"
+# These variables are available to every VM in the lab environment
+# Students: Modify these to customize your domain and user accounts
 
-# ==============================================================================
-# DNS Configuration
-# ==============================================================================
-dns_forwarders:
-  - "129.21.3.17"
-  - "129.21.4.18"
+# ------------------------------------------------------------------------------
+# ACTIVE DIRECTORY DOMAIN CONFIGURATION
+# ------------------------------------------------------------------------------
+# The Windows domain that all machines will join
+# Format: domain_name.local is standard for lab environments
+domain_name: CDT.local
+domain_netbios_name: CDT
 
-# ==============================================================================
-# Active Directory Organizational Units
-# ==============================================================================
-organizational_units:
-  - "Users"
-  - "Computers"
-  - "Linux Servers"
+# Domain administrator credentials
+# SECURITY NOTE: In production, NEVER hardcode passwords!
+# This is OK for isolated lab environments only
+domain_admin_user: cyberrange
+domain_admin_password: Cyberrange123!
 
-# ==============================================================================
-# Domain Users Configuration
-# ==============================================================================
+# Safe mode password (for domain controller recovery)
+# Required when promoting a server to domain controller
+domain_safe_mode_password: Cyberrange123!
+
+# ------------------------------------------------------------------------------
+# DOMAIN USERS AND GROUPS
+# ------------------------------------------------------------------------------
+# Students: Add/remove users here to create different attack scenarios
+# Each user will be created in Active Directory with these credentials
+
 domain_users:
-  - username: "jdoe"
-    firstname: "John"
-    lastname: "Doe"
-    password: "UserPass123!"
-  - username: "asmith"
-    firstname: "Alice"
-    lastname: "Smith"
-    password: "UserPass123!"
-  - username: "bwilson"
-    firstname: "Bob"
-    lastname: "Wilson"
-    password: "UserPass123!"
-  - username: "mjohnson"
-    firstname: "Mary"
-    lastname: "Johnson"
-    password: "UserPass123!"
-  - username: "dlee"
-    firstname: "David"
-    lastname: "Lee"
-    password: "UserPass123!"
+  - username: jdoe
+    firstname: John
+    surname: Doe
+    password: UserPass123!
+    groups:
+      - Domain Users
+      - IT Staff
 
-# Domain groups to create for Linux access
-linux_admin_users:
-  - "jdoe"
-  - "asmith"
+  - username: asmith
+    firstname: Alice
+    surname: Smith
+    password: UserPass123!
+    groups:
+      - Domain Users
+      - IT Staff
+      - Domain Admins  # Alice has admin rights - attack target!
 
-# Linux-specific variables have been moved to group_vars/linux_members.yml
+  - username: bwilson
+    firstname: Bob
+    surname: Wilson
+    password: UserPass123!
+    groups:
+      - Domain Users
+
+  - username: mjohnson
+    firstname: Mary
+    surname: Johnson
+    password: UserPass123!
+    groups:
+      - Domain Users
+      - Accounting
+
+  - username: dlee
+    firstname: David
+    surname: Lee
+    password: UserPass123!
+    groups:
+      - Domain Users
+      - Engineering
+
+# Domain groups to create (beyond default groups)
+domain_groups:
+  - name: IT Staff
+    scope: Global
+    category: Security
+    description: Information Technology Staff
+
+  - name: Accounting
+    scope: Global
+    category: Security
+    description: Accounting Department
+
+  - name: Engineering
+    scope: Global
+    category: Security
+    description: Engineering Department
+
+# ------------------------------------------------------------------------------
+# LINUX ADMINISTRATORS
+# ------------------------------------------------------------------------------
+# Domain users who should have sudo access on Linux machines
+# Students: Great for privilege escalation practice!
+linux_admins:
+  - jdoe
+  - asmith
+
+# ------------------------------------------------------------------------------
+# DNS AND NETWORK
+# ------------------------------------------------------------------------------
+# DNS server is the domain controller's internal IP
+# This is set dynamically in playbooks, but you can override here if needed
+# dns_server: 10.10.10.21
+
+# ------------------------------------------------------------------------------
+# ORGANIZATIONAL UNITS (OUs)
+# ------------------------------------------------------------------------------
+# Optional: Organize domain objects into OUs
+# Uncomment and customize if you want a more complex AD structure
+# domain_ous:
+#   - name: Servers
+#     path: DC=CDT,DC=local
+#   - name: Workstations
+#     path: DC=CDT,DC=local
+#   - name: Users
+#     path: DC=CDT,DC=local

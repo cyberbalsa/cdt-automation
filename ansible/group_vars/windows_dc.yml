@@ -1,5 +1,86 @@
 ---
 # ==============================================================================
-# Domain Controller Specific Variables
+# DOMAIN CONTROLLER SPECIFIC VARIABLES
 # ==============================================================================
-# Add DC-specific variables here if needed
+# These settings ONLY apply to the domain controller (first Windows VM)
+# Students: This is where you configure the "heart" of the Windows domain
+
+# ------------------------------------------------------------------------------
+# DOMAIN CONTROLLER ROLES AND FEATURES
+# ------------------------------------------------------------------------------
+# Windows features needed for Active Directory Domain Services (AD DS)
+
+dc_features:
+  - name: AD-Domain-Services
+    state: present
+    include_management_tools: true
+    include_sub_features: true
+
+  - name: DNS
+    state: present
+    include_management_tools: true
+
+  - name: RSAT-AD-Tools
+    state: present
+    include_management_tools: true
+
+  - name: RSAT-DNS-Server
+    state: present
+
+# ------------------------------------------------------------------------------
+# DOMAIN SERVICES CONFIGURATION
+# ------------------------------------------------------------------------------
+# Students: These control how the domain controller operates
+
+# Automatically restart if required after feature installation
+dc_auto_reboot: true
+
+# Wait for AD services to be fully ready before continuing
+dc_wait_for_services: true
+
+# Timeout for waiting (in seconds)
+dc_wait_timeout: 600
+
+# ------------------------------------------------------------------------------
+# DNS FORWARDERS
+# ------------------------------------------------------------------------------
+# DNS servers to forward queries to (for internet resolution)
+# Students: In attack scenarios, you could point this to a rogue DNS server!
+
+dns_forwarders:
+  - 8.8.8.8      # Google DNS
+  - 1.1.1.1      # Cloudflare DNS
+
+# ------------------------------------------------------------------------------
+# ATTACK SURFACE CONFIGURATION
+# ------------------------------------------------------------------------------
+# Students: These create intentional vulnerabilities for practice
+
+# Enable SMBv1 (vulnerable to EternalBlue and other attacks)
+# WARNING: This is intentionally insecure for learning purposes!
+enable_smbv1: true
+
+# Enable LLMNR/NetBIOS (vulnerable to responder attacks)
+enable_llmnr: true
+enable_netbios: true
+
+# Weak password policy (easier to crack for practice)
+# Set this to false for defense exercises
+weak_password_policy: true
+
+# ------------------------------------------------------------------------------
+# LOGGING AND AUDITING
+# ------------------------------------------------------------------------------
+# Students: Enable these to practice log analysis and SIEM integration
+
+# Enable detailed logging
+enable_detailed_logging: false
+
+# Audit policies to enable (for defense practice)
+# audit_policies:
+#   - category: Logon/Logoff
+#     success: true
+#     failure: true
+#   - category: Object Access
+#     success: true
+#     failure: true

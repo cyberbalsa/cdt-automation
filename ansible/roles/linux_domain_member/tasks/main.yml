@@ -1,130 +1,218 @@
 ---
-- name: Install required packages for domain joining
+# ==============================================================================
+# LINUX DOMAIN MEMBER SETUP TASKS
+# ==============================================================================
+# This role joins Linux machines to the Windows Active Directory domain
+#
+# Students: This creates a mixed Windows/Linux environment - realistic!
+#
+# What this does:
+# 1. Installs required packages (realmd, sssd, Kerberos)
+# 2. Configures Kerberos authentication
+# 3. Joins the machine to the AD domain
+# 4. Configures SSSD for user authentication
+# 5. Enables domain user SSH access
+# 6. Grants sudo access to specified domain users
+#
+# Attack scenarios:
+# - Exploit Linux machines to pivot to Windows domain
+# - Steal Kerberos tickets from Linux (/tmp/krb5cc_*)
+# - Attack NFS shares with domain credentials
+# - Exploit SSSD vulnerabilities
+# - Use Linux as a foothold for domain enumeration
+
+# ------------------------------------------------------------------------------
+# STEP 1: Update Package Cache and Install Required Packages
+# ------------------------------------------------------------------------------
+
+- name: Update apt cache
   ansible.builtin.apt:
-    name:
-      - realmd
-      - sssd
-      - sssd-tools
-      - libnss-sss
-      - libpam-sss
-      - adcli
-      - samba-common-bin
-      - oddjob
-      - oddjob-mkhomedir
-      - packagekit
-      - krb5-user
+    update_cache: true
+    cache_valid_time: 3600  # Cache valid for 1 hour
+  # Students: This ensures we get latest package versions
+
+- name: Install domain membership packages
+  ansible.builtin.apt:
+    name: "{{ ldm_packages }}"
     state: present
+  # This installs ~20 packages, may take 2-3 minutes
+
+# ------------------------------------------------------------------------------
+# STEP 2: Configure DNS to Point to Domain Controller
+# ------------------------------------------------------------------------------
+
+- name: Get domain controller internal IP
+  ansible.builtin.set_fact:
+    linux_domain_member_dc_ip: "{{ hostvars[groups['windows_dc'][0]]['internal_ip'] }}"
 
 - name: Configure DNS to use domain controller
-  ansible.builtin.lineinfile:
-    path: /etc/resolv.conf
-    line: "nameserver {{ domain_controller_ip }}"
-    insertbefore: BOF
-    backup: true
-
-- name: Configure Kerberos realm
-  ansible.builtin.copy:
-    dest: /etc/krb5.conf
+  ansible.builtin.template:
+    src: resolv.conf.j2
+    dest: /etc/resolv.conf
     mode: '0644'
-    content: |
-      [logging]
-      default = FILE:/var/log/krb5libs.log
-      kdc = FILE:/var/log/krb5kdc.log
-      admin_server = FILE:/var/log/kadmind.log
-
-      [libdefaults]
-      default_realm = {{ domain_name | upper }}.LOCAL
-      dns_lookup_realm = false
-      dns_lookup_kdc = true
-      ticket_lifetime = {{ kerberos_ticket_lifetime }}
-      renew_lifetime = {{ kerberos_renew_lifetime }}
-      forwardable = true
-
-      [realms]
-      {{ domain_name | upper }}.LOCAL = {
-        kdc = {{ domain_controller_ip }}
-        admin_server = {{ domain_controller_ip }}
-        default_domain = {{ domain_name | lower }}.local
-      }
-
-      [domain_realm]
-      .{{ domain_name | lower }}.local = {{ domain_name | upper }}.LOCAL
-      {{ domain_name | lower }}.local = {{ domain_name | upper }}.LOCAL
-    backup: true
-
-- name: Discover domain
-  ansible.builtin.command: realm discover {{ domain_name }}.local
-  register: linux_domain_member_realm_discover
-  failed_when: false
-  changed_when: false
-
-- name: Join domain using realm
-  ansible.builtin.expect:
-    command: realm join --user={{ domain_admin_user }} {{ domain_name }}.local
-    responses:
-      "Password for *": "{{ domain_admin_password }}"
-    timeout: 300
-  register: linux_domain_member_realm_join
-  failed_when: false
-
-- name: Configure SSSD for domain authentication
-  ansible.builtin.copy:
-    dest: /etc/sssd/sssd.conf
-    mode: '0600'
-    content: |
-      [sssd]
-      domains = {{ domain_name }}.local
-      config_file_version = 2
-      services = nss, pam
-
-      [domain/{{ domain_name }}.local]
-      default_shell = {{ sssd_default_shell }}
-      krb5_store_password_if_offline = True
-      cache_credentials = True
-      krb5_realm = {{ domain_name | upper }}.LOCAL
-      realmd_tags = manages-system joined-with-adcli
-      id_provider = ad
-      fallback_homedir = {{ sssd_fallback_homedir }}
-      ad_domain = {{ domain_name }}.local
-      use_fully_qualified_names = True
-      ldap_id_mapping = True
-      access_provider = ad
-    backup: true
   notify: Restart sssd
 
-- name: Configure PAM for automatic home directory creation
-  ansible.builtin.lineinfile:
-    path: /etc/pam.d/common-session
-    line: "session required pam_mkhomedir.so skel={{ pam_mkhomedir_skel }} umask={{ pam_mkhomedir_umask }}"
-    insertafter: "session.*pam_unix.so"
+# ------------------------------------------------------------------------------
+# STEP 3: Configure Kerberos
+# ------------------------------------------------------------------------------
+# Kerberos is the authentication protocol used by Active Directory
 
-- name: Configure SSH to allow domain users
-  ansible.builtin.lineinfile:
-    path: /etc/ssh/sshd_config
-    regexp: '^#?PasswordAuthentication'
-    line: 'PasswordAuthentication yes'
-    backup: true
-  notify: Restart ssh
+- name: Configure Kerberos client
+  ansible.builtin.template:
+    src: krb5.conf.j2
+    dest: /etc/krb5.conf
+    mode: '0644'
+    backup: true  # Keep a backup of original config
+  # Students: Check /etc/krb5.conf to see the configuration
 
-- name: Allow domain users sudo access (optional)
-  ansible.builtin.lineinfile:
-    path: /etc/sudoers.d/domain_users
-    line: "%domain\\ users@{{ domain_name }}.local ALL=(ALL) ALL"
-    create: true
-    mode: '0440'
-    validate: 'visudo -cf %s'
+# Test Kerberos configuration
+- name: Test Kerberos authentication
+  ansible.builtin.shell: |
+    set -o pipefail
+    echo "{{ domain_admin_password }}" | kinit {{ domain_admin_user }}@{{ ldm_realm }}
+    klist
+  args:
+    executable: /bin/bash
+  register: linux_domain_member_kinit_test
+  changed_when: false
+  # Students: This gets a Kerberos ticket for the domain admin
+  # Tickets are stored in /tmp/krb5cc_* - potential attack target!
 
-- name: Start and enable SSSD service
-  ansible.builtin.systemd:
+- name: Display Kerberos ticket information
+  ansible.builtin.debug:
+    msg: "{{ linux_domain_member_kinit_test.stdout_lines }}"
+
+# ------------------------------------------------------------------------------
+# STEP 4: Join Domain Using realm
+# ------------------------------------------------------------------------------
+
+- name: Check if already joined to domain
+  ansible.builtin.command: realm list
+  register: linux_domain_member_realm_status
+  changed_when: false
+  failed_when: false
+
+- name: Join domain with realm
+  ansible.builtin.shell: |
+    set -o pipefail
+    echo "{{ domain_admin_password }}" | realm join \
+      --user={{ domain_admin_user }} \
+      {{ ldm_domain_name }} \
+      --verbose
+  args:
+    executable: /bin/bash
+  when: ldm_domain_name not in linux_domain_member_realm_status.stdout
+  register: linux_domain_member_realm_join
+  changed_when: linux_domain_member_realm_join.rc == 0
+  # This creates the computer account in Active Directory
+  # Students: You'll see this machine appear in "AD Users and Computers"
+
+# ------------------------------------------------------------------------------
+# STEP 5: Configure SSSD for Domain Authentication
+# ------------------------------------------------------------------------------
+# SSSD (System Security Services Daemon) handles authentication
+
+- name: Configure SSSD
+  ansible.builtin.template:
+    src: sssd.conf.j2
+    dest: /etc/sssd/sssd.conf
+    mode: '0600'  # Must be readable only by root
+    owner: root
+    group: root
+  notify: Restart sssd
+
+- name: Ensure SSSD is enabled and started
+  ansible.builtin.service:
     name: sssd
     state: started
     enabled: true
 
+# ------------------------------------------------------------------------------
+# STEP 6: Configure SSH Access for Domain Users
+# ------------------------------------------------------------------------------
+
+- name: Allow password authentication in SSH
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?PasswordAuthentication'
+    line: 'PasswordAuthentication yes'
+    state: present
+  notify: Restart ssh
+  when: ssh_password_authentication | default(true)
+
+- name: Enable GSSAPI authentication (Kerberos)
+  ansible.builtin.lineinfile:
+    path: /etc/ssh/sshd_config
+    regexp: '^#?GSSAPIAuthentication'
+    line: 'GSSAPIAuthentication yes'
+    state: present
+  notify: Restart ssh
+
+# Configure PAM to create home directories automatically
+- name: Enable automatic home directory creation
+  ansible.builtin.lineinfile:
+    path: /etc/pam.d/common-session
+    line: 'session required pam_mkhomedir.so skel=/etc/skel/ umask=0077'
+    state: present
+  # Students: This creates /home/username@CDT.local on first login
+
+# ------------------------------------------------------------------------------
+# STEP 7: Grant Sudo Access to Domain Admins
+# ------------------------------------------------------------------------------
+
+- name: Configure sudo access for linux admins
+  ansible.builtin.template:
+    src: sudoers_domain_admins.j2
+    dest: /etc/sudoers.d/domain_admins
+    mode: '0440'
+    owner: root
+    group: root
+    validate: 'visudo -cf %s'  # Validate before saving
+  when: linux_admins is defined and linux_admins | length > 0
+  # Students: This gives specific domain users sudo rights
+  # Attack scenario: Compromise these accounts for privilege escalation!
+
+# ------------------------------------------------------------------------------
+# STEP 8: Verify Domain Membership
+# ------------------------------------------------------------------------------
+
 - name: Verify domain join
   ansible.builtin.command: realm list
-  register: linux_domain_member_realm_status
+  register: linux_domain_member_final_realm_check
   changed_when: false
 
-- name: Display realm status
+- name: Display domain membership status
   ansible.builtin.debug:
-    var: linux_domain_member_realm_status.stdout_lines
+    msg: "{{ linux_domain_member_final_realm_check.stdout_lines }}"
+
+# Test domain user enumeration
+- name: Test domain user enumeration
+  ansible.builtin.command: getent passwd {{ domain_users[0].username }}
+  register: linux_domain_member_getent_test
+  changed_when: false
+  failed_when: false
+  when: domain_users is defined and domain_users | length > 0
+
+- name: Display user enumeration result
+  ansible.builtin.debug:
+    msg: "{{ linux_domain_member_getent_test.stdout }}"
+  when: linux_domain_member_getent_test.stdout is defined
+  # Students: If this works, domain users can login!
+  # Try: ssh jdoe@CDT.local@<linux_ip>
+
+# ==============================================================================
+# LINUX DOMAIN JOIN COMPLETE!
+# ==============================================================================
+# Students: Your Linux machine is now part of the Windows domain
+#
+# Test it out:
+# 1. SSH: ssh username@CDT.local@<linux_ip>
+# 2. Check tickets: klist (shows Kerberos tickets)
+# 3. List users: getent passwd (shows domain users)
+# 4. Test sudo: sudo -l (if user is in linux_admins)
+#
+# Attack practice:
+# - Steal Kerberos tickets from /tmp/krb5cc_*
+# - Use keytab files for persistence (/etc/krb5.keytab)
+# - Exploit SSSD cache (/var/lib/sss/db/)
+# - Attack NFS with domain credentials
