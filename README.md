@@ -4,7 +4,7 @@
 
 This project demonstrates how to bootstrap a complete cloud infrastructure on OpenStack using Infrastructure as Code (IaC) principles. You'll learn to deploy virtual machines with OpenTofu (Terraform) and configure them with Ansible to create a functional Active Directory domain environment.
 
-## 🎯 Learning Objectives
+## Learning Objectives
 
 By completing this project, you will:
 - Understand OpenStack cloud infrastructure concepts
@@ -13,7 +13,7 @@ By completing this project, you will:
 - Deploy and manage a multi-server domain environment
 - Practice DevOps automation workflows
 
-## 📋 Prerequisites
+## Prerequisites
 
 ### Required Knowledge
 - Basic Linux command line skills
@@ -32,7 +32,7 @@ By completing this project, you will:
 - SSH key pair registered in OpenStack
 - Application credentials for API access
 
-## 🏗️ Project Architecture
+## Project Architecture
 
 This project creates a complete infrastructure consisting of:
 
@@ -70,7 +70,7 @@ This project creates a complete infrastructure consisting of:
 - **Floating IPs**: External access to all servers
 - **Security Groups**: Firewall rules for proper service access
 
-## 🚀 Quick Start Guide
+## Quick Start Guide
 
 ### Step 1: Clone and Setup
 ```bash
@@ -182,7 +182,7 @@ cd ansible
 ansible-playbook -i inventory.ini site.yml
 ```
 
-## 🔄 Utility Scripts
+## Utility Scripts
 
 ### Automatic Inventory Generation
 
@@ -407,7 +407,7 @@ This allows you to:
 - Provide partial names (remaining VMs use auto-generated names)
 - Use empty list for all auto-generated names (default behavior)
 
-## 🎓 Educational Exercises
+## Educational Exercises
 
 ### Beginner Level
 1. **Modify Server Count**: Change `windows_count` and `debian_count` in variables
@@ -424,7 +424,7 @@ This allows you to:
 2. **Load Balancer**: Add load balancing for web services
 3. **Monitoring**: Integrate monitoring and logging solutions
 
-## 🐛 Troubleshooting Guide
+## Troubleshooting Guide
 
 ### Common OpenTofu Issues
 
@@ -488,7 +488,7 @@ ssh -i ~/.ssh/id_rsa debian@<floating-ip>
 ssh-keygen -l -f ~/.ssh/id_rsa.pub
 ```
 
-## 📚 Additional Resources
+## Additional Resources
 
 ### Learning Materials
 - [OpenTofu Documentation](https://opentofu.org/docs/)
@@ -505,7 +505,7 @@ ssh-keygen -l -f ~/.ssh/id_rsa.pub
 - [Ansible Community](https://www.ansible.com/community)
 - [OpenStack Community](https://www.openstack.org/community/)
 
-## 🤝 Contributing
+## Contributing
 
 This is an educational project! Contributions welcome:
 
@@ -515,11 +515,11 @@ This is an educational project! Contributions welcome:
 4. Push to branch (`git push origin feature/improvement`)
 5. Create a Pull Request
 
-## 📄 License
+## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-## 🆘 Getting Help
+## Getting Help
 
 If you encounter issues:
 
@@ -536,6 +536,6 @@ Remember: Making mistakes is part of learning! Don't be afraid to experiment and
 
 ---
 
-**Happy Learning! 🚀**
+**Happy Learning!**
 
 *This project is designed for educational purposes to teach Infrastructure as Code concepts using real-world tools and practices.*
