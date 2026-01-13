@@ -2,7 +2,7 @@
 
 Use this checklist to track your progress through the project setup.
 
-## 📋 Pre-Project Setup
+## Pre-Project Setup
 
 ### Prerequisites
 - [ ] I have basic Linux command line knowledge
@@ -22,7 +22,7 @@ Use this checklist to track your progress through the project setup.
 - [ ] Application credentials created in OpenStack
 - [ ] Can login to OpenStack dashboard
 
-## 🔧 Project Setup
+## Project Setup
 
 ### Initial Configuration
 - [ ] Project repository cloned locally
@@ -36,7 +36,7 @@ Use this checklist to track your progress through the project setup.
 - [ ] Reviewed Ansible playbooks in `/ansible/` directory
 - [ ] Understand the network architecture diagram
 
-## 🚀 Infrastructure Deployment
+## Infrastructure Deployment
 
 ### OpenTofu (Infrastructure)
 - [ ] Navigate to `opentofu/` directory
@@ -53,7 +53,7 @@ Use this checklist to track your progress through the project setup.
 - [ ] Test connectivity to Linux servers
 - [ ] Run complete setup with `ansible-playbook -i inventory.ini site.yml`
 
-## ✅ Verification & Testing
+## Verification & Testing
 
 ### Infrastructure Verification
 - [ ] All VMs visible in OpenStack dashboard
@@ -72,7 +72,7 @@ Use this checklist to track your progress through the project setup.
 - [ ] Domain admin users have sudo access
 - [ ] All 5 test users can authenticate
 
-## 🎓 Learning Exercises
+## Learning Exercises
 
 ### Beginner Challenges
 - [ ] Change the number of Windows servers and redeploy
@@ -92,7 +92,7 @@ Use this checklist to track your progress through the project setup.
 - [ ] Add monitoring/logging to the infrastructure
 - [ ] Create automated backup procedures
 
-## 🐛 Troubleshooting Completed
+## Troubleshooting Completed
 
 ### Common Issues Resolved
 - [ ] Fixed OpenStack authentication problems
@@ -101,7 +101,7 @@ Use this checklist to track your progress through the project setup.
 - [ ] Resolved Ansible playbook errors
 - [ ] Fixed domain join issues
 
-## 📝 Documentation & Reflection
+## Documentation & Reflection
 
 ### Learning Documentation
 - [ ] Created notes on OpenTofu concepts learned
@@ -115,7 +115,7 @@ Use this checklist to track your progress through the project setup.
 - [ ] Documented lessons learned
 - [ ] Prepared questions for discussion
 
-## 🎯 Next Steps
+## Next Steps
 
 ### Project Extensions
 - [ ] Plan additional features to implement
@@ -131,7 +131,7 @@ Use this checklist to track your progress through the project setup.
 
 ---
 
-**Congratulations!** 🎉 
+**Congratulations!** 
 
 If you've completed all the core items above, you've successfully:
 - Deployed infrastructure with OpenTofu
