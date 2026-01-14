@@ -169,7 +169,9 @@ Upload your public key to OpenStack:
 
 ### OpenStack Credentials
 
-OpenTofu needs credentials to talk to OpenStack.
+OpenTofu authenticates to OpenStack using **environment variables**. You download a credentials file from OpenStack and source it before running commands.
+
+**Setup Process:**
 
 1. Go to https://openstack.cyberrange.rit.edu
 2. Navigate to Identity then Application Credentials
@@ -186,6 +188,12 @@ Run the setup script to configure credentials:
 ```
 
 The script will find your credentials file and rename it to `app-cred-openrc.sh`.
+
+**How it works:**
+
+The downloaded openrc file is a shell script that sets environment variables (`OS_APPLICATION_CREDENTIAL_ID`, `OS_APPLICATION_CREDENTIAL_SECRET`, etc.). When you run `source app-cred-openrc.sh`, these variables are loaded into your shell session. The OpenStack provider in `main.tf` automatically reads these environment variables.
+
+You must source the credentials file in every new terminal session before running `tofu` commands.
 
 ### Configure Your SSH Key Name
 

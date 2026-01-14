@@ -255,7 +255,8 @@ OpenStack credentials are managed through a single downloaded file:
   ```bash
   source app-cred-openrc.sh
   ```
-- The file sets environment variables that OpenTofu/Terraform reads automatically
+- The file sets environment variables (`OS_APPLICATION_CREDENTIAL_ID`, `OS_APPLICATION_CREDENTIAL_SECRET`, etc.)
+- The OpenStack provider in `main.tf` automatically reads these environment variables
 - File is automatically gitignored (pattern: `app-cred*openrc.sh`)
 - Works for both OpenTofu and OpenStack CLI commands
 
