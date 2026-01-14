@@ -14,6 +14,13 @@
 #
 # Expected runtime: 5-10 minutes (desktop environment is large)
 #
+# DOCUMENTATION LINKS:
+# - xRDP Wiki: https://github.com/neutrinolabs/xrdp/wiki
+# - xRDP Configuration: https://github.com/neutrinolabs/xrdp/wiki/Configuration
+# - Ansible service module: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/service_module.html
+# - Ansible copy module: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
+# - UFW module: https://docs.ansible.com/ansible/latest/collections/community/general/ufw_module.html
+#
 # Usage:
 #   ansible-playbook playbooks/setup-rdp-linux.yml
 
@@ -65,19 +72,26 @@
           # xRDP Session Startup Script
           # ==================================================================
           # Students: This script runs when you RDP into the Linux machine
-          # It starts the XFCE desktop environment
+          # It starts the LXQT desktop environment
+          #
+          # WHAT EACH LINE DOES:
+          # - unset DBUS_SESSION_BUS_ADDRESS: Clears D-Bus session to prevent
+          #   conflicts between the RDP session and any existing local session
+          # - unset XDG_RUNTIME_DIR: Prevents issues with user session directories
+          # - /etc/default/locale: Loads language settings (LANG, LANGUAGE)
+          # - startlxqt: Launches the LXQT desktop environment
 
           # Unset session manager to avoid conflicts
           unset DBUS_SESSION_BUS_ADDRESS
           unset XDG_RUNTIME_DIR
 
-          # Start XFCE session
+          # Load locale settings (language, keyboard layout)
           if [ -r /etc/default/locale ]; then
             . /etc/default/locale
             export LANG LANGUAGE
           fi
 
-          # Launch XFCE desktop
+          # Launch LXQT desktop
           startlxqt
       notify: Restart xrdp
 

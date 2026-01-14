@@ -2,32 +2,67 @@
 # ==============================================================================
 # GLOBAL VARIABLES - APPLY TO ALL HOSTS
 # ==============================================================================
-# These variables are available to every VM in the lab environment
-# Students: Modify these to customize your domain and user accounts
+# These variables are available to every VM in the lab environment.
+# Edit these to customize your domain and user accounts.
+#
+# HOW ANSIBLE VARIABLES WORK:
+# 1. Variables defined here are loaded for ALL hosts
+# 2. Group-specific variables (in other files) override these
+# 3. Host-specific variables override group variables
+# 4. Command-line variables (-e) override everything
+#
+# DOCUMENTATION:
+# - Ansible Variables: https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_variables.html
+# - Variable Precedence: https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_variables.html#variable-precedence-where-should-i-put-a-variable
+#
+# ==============================================================================
 
 # ------------------------------------------------------------------------------
 # ACTIVE DIRECTORY DOMAIN CONFIGURATION
 # ------------------------------------------------------------------------------
-# The Windows domain that all machines will join
-# Format: domain_name.local is standard for lab environments
+# These settings define your Windows domain.
+#
+# WHAT IS ACTIVE DIRECTORY?
+# Active Directory (AD) is Microsoft's directory service that manages:
+# - User accounts and passwords
+# - Computer accounts
+# - Group memberships
+# - Security policies
+#
+# A "domain" is a collection of computers that share a common directory database.
+# The "Domain Controller" (DC) is the server that runs AD services.
+
 domain_name: CDT.local
+# The fully qualified domain name (FQDN)
+# Format: DOMAIN.extension (usually .local for labs)
+# Users will log in as: username@CDT.local or CDT\username
+
 domain_netbios_name: CDT
+# The short (NetBIOS) name for the domain
+# Used in older login format: CDT\username
+# Must be 15 characters or fewer, no dots
 
 # Domain administrator credentials
-# SECURITY NOTE: In production, NEVER hardcode passwords!
-# This is OK for isolated lab environments only
+# These are used by Ansible to configure domain services
 domain_admin_user: cyberrange
 domain_admin_password: Cyberrange123!
+# SECURITY NOTE: In production, NEVER hardcode passwords!
+# Use Ansible Vault for secrets: https://docs.ansible.com/ansible/latest/vault_guide/index.html
+# This is OK for isolated lab/competition environments only
 
 # Safe mode password (for domain controller recovery)
 # Required when promoting a server to domain controller
+# Used to boot into Directory Services Restore Mode (DSRM)
 domain_safe_mode_password: Cyberrange123!
 
 # ------------------------------------------------------------------------------
 # DOMAIN USERS AND GROUPS
 # ------------------------------------------------------------------------------
-# Students: Add/remove users here to create different attack scenarios
-# Each user will be created in Active Directory with these credentials
+# Users and groups to create in Active Directory.
+# Customize this list for your competition scenario.
+#
+# Each user will be created with these properties and added to specified groups.
+# This is a YAML list - each item starts with a dash (-).
 
 domain_users:
   - username: jdoe
@@ -35,8 +70,9 @@ domain_users:
     surname: Doe
     password: UserPass123!
     groups:
-      - Domain Users
-      - IT Staff
+      - Domain Users        # Default group for all domain users
+      - IT Staff            # Custom group (created below)
+    # COMPETITION NOTE: Regular user, good for testing normal access
 
   - username: asmith
     firstname: Alice
@@ -45,7 +81,10 @@ domain_users:
     groups:
       - Domain Users
       - IT Staff
-      - Domain Admins  # Alice has admin rights - attack target!
+      - Domain Admins       # Makes Alice a domain administrator!
+    # ATTACK TARGET: Domain Admin accounts are high-value targets
+    # Red Team: Try to compromise this account
+    # Blue Team: Monitor and protect this account
 
   - username: bwilson
     firstname: Bob
@@ -53,6 +92,7 @@ domain_users:
     password: UserPass123!
     groups:
       - Domain Users
+    # Regular user with minimal privileges
 
   - username: mjohnson
     firstname: Mary
@@ -61,6 +101,7 @@ domain_users:
     groups:
       - Domain Users
       - Accounting
+    # Department-specific user
 
   - username: dlee
     firstname: David
@@ -69,12 +110,28 @@ domain_users:
     groups:
       - Domain Users
       - Engineering
+    # Department-specific user
+
+# YAML LIST SYNTAX EXPLAINED:
+# - The dash (-) starts a new list item
+# - Indented keys belong to that item
+# - Lists within lists (like groups) use the same dash syntax
+#
+# ADDING MORE USERS:
+# Copy an existing block and modify:
+#   - username: newuser
+#     firstname: New
+#     surname: User
+#     password: SomePassword123!
+#     groups:
+#       - Domain Users
 
 # Domain groups to create (beyond default groups)
+# These are custom groups for your organization
 domain_groups:
   - name: IT Staff
-    scope: Global
-    category: Security
+    scope: Global           # Global groups can contain users from this domain
+    category: Security      # Security groups (for permissions) vs Distribution (email)
     description: Information Technology Staff
 
   - name: Accounting
@@ -87,27 +144,53 @@ domain_groups:
     category: Security
     description: Engineering Department
 
+# GROUP SCOPES EXPLAINED:
+# - Global: Can contain users from same domain, can be used in any domain
+# - Domain Local: Can contain users from any domain, used only in this domain
+# - Universal: Can contain users from any domain, used in any domain (more replication)
+#
+# For most cases, Global scope is appropriate.
+
 # ------------------------------------------------------------------------------
 # LINUX ADMINISTRATORS
 # ------------------------------------------------------------------------------
-# Domain users who should have sudo access on Linux machines
-# Students: Great for privilege escalation practice!
+# Domain users who should have sudo (administrator) access on Linux machines.
+# These users can run commands as root using 'sudo'.
+
 linux_admins:
   - jdoe
   - asmith
 
+# COMPETITION NOTE:
+# - These users can elevate privileges on Linux systems
+# - Great for privilege escalation practice
+# - Red Team: Compromise these accounts for Linux admin access
+# - Blue Team: Monitor sudo usage in /var/log/auth.log
+
 # ------------------------------------------------------------------------------
 # DNS AND NETWORK
 # ------------------------------------------------------------------------------
-# DNS server is the domain controller's internal IP
-# This is set dynamically in playbooks, but you can override here if needed
+# DNS settings for domain resolution.
+# The domain controller becomes the DNS server for the domain.
+
+# DNS server is typically the domain controller's internal IP
+# This is set dynamically in playbooks based on the DC's actual IP
+# Uncomment to override:
 # dns_server: 10.10.10.21
+
+# HOW DNS WORKS IN A DOMAIN:
+# 1. The DC runs DNS server for the domain (CDT.local)
+# 2. All domain members point their DNS to the DC
+# 3. The DC resolves internal names (dc01.CDT.local)
+# 4. The DC forwards external queries (google.com) to internet DNS
 
 # ------------------------------------------------------------------------------
 # ORGANIZATIONAL UNITS (OUs)
 # ------------------------------------------------------------------------------
-# Optional: Organize domain objects into OUs
-# Uncomment and customize if you want a more complex AD structure
+# Optional: Organize domain objects into OUs for a more realistic structure.
+# OUs are containers in AD that group objects logically.
+#
+# Uncomment and customize if you want a more complex AD structure:
 # domain_ous:
 #   - name: Servers
 #     path: DC=CDT,DC=local
@@ -115,3 +198,49 @@ linux_admins:
 #     path: DC=CDT,DC=local
 #   - name: Users
 #     path: DC=CDT,DC=local
+#   - name: IT
+#     path: OU=Users,DC=CDT,DC=local
+
+# ==============================================================================
+# CUSTOMIZING FOR YOUR COMPETITION
+# ==============================================================================
+#
+# 1. CHANGE THE DOMAIN NAME:
+#    - Update domain_name and domain_netbios_name
+#    - Example: domain_name: HOSPITAL.local
+#
+# 2. ADD MORE USERS:
+#    - Add entries to domain_users list
+#    - Give them realistic names for your scenario
+#    - Vary the group memberships
+#
+# 3. CREATE CUSTOM GROUPS:
+#    - Add entries to domain_groups list
+#    - Example for a hospital: Doctors, Nurses, Administrators, IT
+#
+# 4. SET UP SERVICE ACCOUNTS:
+#    - Create users for services (SQL, web apps, etc.)
+#    - These are targets for Kerberoasting attacks!
+#
+# EXAMPLE SERVICE ACCOUNT:
+#   - username: svc_sql
+#     firstname: SQL
+#     surname: Service
+#     password: ServicePass123!
+#     groups:
+#       - Domain Users
+#
+# ==============================================================================
+# DOCUMENTATION LINKS
+# ==============================================================================
+#
+# ACTIVE DIRECTORY:
+# - AD Overview: https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/get-started/virtual-dc/active-directory-domain-services-overview
+# - Domain vs Workgroup: https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/plan/understanding-active-directory-site-topology
+#
+# ANSIBLE:
+# - Variables: https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_variables.html
+# - YAML Syntax: https://docs.ansible.com/ansible/latest/reference_appendices/YAMLSyntax.html
+# - Vault (for secrets): https://docs.ansible.com/ansible/latest/vault_guide/index.html
+#
+# ==============================================================================

@@ -17,6 +17,14 @@
 # - DCSync attacks (mimikatz)
 # - Pass-the-hash / Pass-the-ticket
 # - LDAP enumeration
+#
+# DOCUMENTATION LINKS:
+# - Ansible Windows Collection: https://docs.ansible.com/ansible/latest/collections/ansible/windows/
+# - win_feature module: https://docs.ansible.com/ansible/latest/collections/ansible/windows/win_feature_module.html
+# - win_powershell module: https://docs.ansible.com/ansible/latest/collections/ansible/windows/win_powershell_module.html
+# - win_reboot module: https://docs.ansible.com/ansible/latest/collections/ansible/windows/win_reboot_module.html
+# - Install-ADDSForest (PowerShell): https://learn.microsoft.com/en-us/powershell/module/addsdeployment/install-addsforest
+# - AD DS Overview: https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/get-started/virtual-dc/active-directory-domain-services-overview
 
 # ------------------------------------------------------------------------------
 # STEP 1: Install Required Windows Features
@@ -30,6 +38,15 @@
   loop: "{{ dc_features }}"
   register: feature_install
   # This may take 5-10 minutes on first run
+  #
+  # ANSIBLE CONSTRUCTS EXPLAINED:
+  # - loop: Iterates over dc_features list (defined in group_vars/windows_dc.yml)
+  #         Each iteration, "item" contains one element from the list
+  #         Docs: https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html
+  #
+  # - register: Saves the task result to a variable (feature_install)
+  #             Used later to check if reboot is needed
+  #             Docs: https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_variables.html#registering-variables
 
 - name: Reboot if required after feature installation
   ansible.windows.win_reboot:
@@ -122,6 +139,13 @@
   until: adws_check is succeeded
   retries: 10
   delay: 30
+  # RETRY PATTERN EXPLAINED (until/retries/delay):
+  # - until: Condition that must be true for the task to succeed
+  #          "is succeeded" checks if the task completed without errors
+  # - retries: Maximum number of attempts (10 attempts here)
+  # - delay: Seconds to wait between attempts (30 seconds)
+  # Total wait time: up to 10 * 30 = 300 seconds (5 minutes)
+  # Docs: https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html#retrying-a-task-until-a-condition-is-met
 
 - name: Verify domain is functional
   ansible.windows.win_powershell:

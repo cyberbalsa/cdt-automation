@@ -4,27 +4,33 @@
 # ==============================================================================
 # These settings ONLY apply to the domain controller (first Windows VM)
 # Students: This is where you configure the "heart" of the Windows domain
+#
+# DOCUMENTATION LINKS:
+# - AD DS Overview: https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/get-started/virtual-dc/active-directory-domain-services-overview
+# - Windows Features: https://learn.microsoft.com/en-us/windows-server/administration/server-manager/install-or-uninstall-roles-role-services-or-features
+# - Install-ADDSForest: https://learn.microsoft.com/en-us/powershell/module/addsdeployment/install-addsforest
 
 # ------------------------------------------------------------------------------
 # DOMAIN CONTROLLER ROLES AND FEATURES
 # ------------------------------------------------------------------------------
 # Windows features needed for Active Directory Domain Services (AD DS)
+# Docs: https://learn.microsoft.com/en-us/windows-server/administration/server-manager/install-or-uninstall-roles-role-services-or-features
 
 dc_features:
-  - name: AD-Domain-Services
-    state: present
+  - name: AD-Domain-Services       # Core AD DS role - stores directory data, handles authentication
+    state: present                 # Docs: https://learn.microsoft.com/en-us/windows-server/identity/ad-ds/
     include_management_tools: true
     include_sub_features: true
 
-  - name: DNS
-    state: present
+  - name: DNS                      # DNS server - required for AD to work (stores SRV records)
+    state: present                 # Docs: https://learn.microsoft.com/en-us/windows-server/networking/dns/dns-top
     include_management_tools: true
 
-  - name: RSAT-AD-Tools
-    state: present
+  - name: RSAT-AD-Tools            # Remote Server Admin Tools - GUI management consoles
+    state: present                 # Includes: AD Users & Computers, AD Sites & Services, etc.
     include_management_tools: true
 
-  - name: RSAT-DNS-Server
+  - name: RSAT-DNS-Server          # DNS Manager GUI for managing DNS zones and records
     state: present
 
 # ------------------------------------------------------------------------------

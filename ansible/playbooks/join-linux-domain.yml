@@ -63,18 +63,28 @@
     # ------------------------------------------------------------------------------
     # STEP 1: Configure Timezone and Time Synchronization
     # ------------------------------------------------------------------------------
-    # Critical: Kerberos requires time sync within 5 minutes
+    # Critical: Kerberos requires time sync within 5 minutes!
+    #
+    # WHY TIME SYNC MATTERS:
+    # Kerberos tickets include timestamps. If your clock is off by more than
+    # 5 minutes from the Domain Controller, authentication WILL FAIL with
+    # "Clock skew too great" errors.
+    #
+    # Docs: https://web.mit.edu/kerberos/krb5-latest/doc/admin/appl_servers.html
+    # Chrony: https://chrony-project.org/documentation.html
 
     - name: Set timezone to America/New_York
       community.general.timezone:
         name: America/New_York
       register: timezone_result
+      # Docs: https://docs.ansible.com/ansible/latest/collections/community/general/timezone_module.html
 
     - name: Install chrony for time synchronization
       ansible.builtin.apt:
         name: chrony
         state: present
         update_cache: true
+      # Chrony is a modern NTP client that's faster at syncing than traditional ntpd
 
     - name: Restart chrony service
       ansible.builtin.systemd:
@@ -89,6 +99,10 @@
       register: chrony_sync
       changed_when: false
       ignore_errors: true
+      # CHRONYC COMMANDS:
+      # - makestep: Forces immediate time correction (even if diff > threshold)
+      # - sources: Shows configured NTP servers and their sync status
+      # Docs: https://chrony-project.org/doc/4.6/chronyc.html
 
 
     - name: Display current time

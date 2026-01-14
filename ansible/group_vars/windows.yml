@@ -2,76 +2,220 @@
 # ==============================================================================
 # WINDOWS-SPECIFIC VARIABLES
 # ==============================================================================
-# These settings apply to ALL Windows hosts (domain controller + members)
-# Students: These control how Ansible connects to Windows over WinRM
+# These settings apply to ALL Windows hosts (domain controller + members).
+# They control how Ansible connects to and manages Windows servers.
+#
+# DOCUMENTATION:
+# - Windows Modules: https://docs.ansible.com/ansible/latest/collections/ansible/windows/index.html
+# - WinRM Connection: https://docs.ansible.com/ansible/latest/os_guide/windows_winrm.html
+# - Windows Setup: https://docs.ansible.com/ansible/latest/os_guide/windows_setup.html
+#
+# ==============================================================================
 
 # ------------------------------------------------------------------------------
 # WINRM CONNECTION SETTINGS
 # ------------------------------------------------------------------------------
-# WinRM = Windows Remote Management (similar to SSH for Windows)
+# WinRM (Windows Remote Management) is how Ansible communicates with Windows.
+# It's similar to SSH for Linux, but uses different protocols.
+#
+# HOW WINRM WORKS:
+# 1. Ansible sends commands over HTTP/HTTPS to the WinRM service
+# 2. WinRM executes PowerShell commands on the Windows server
+# 3. Results are returned to Ansible
+#
+# DOCUMENTATION: https://docs.ansible.com/ansible/latest/os_guide/windows_winrm.html
 
-# Connection method: winrm (Windows Remote Management)
 ansible_connection: winrm
+# Connection type for Windows hosts
+# Options: winrm, psrp (PowerShell Remoting Protocol)
+# winrm is the standard choice
 
-# Authentication: NTLM (works for local and domain accounts)
 ansible_winrm_transport: ntlm
+# Authentication method
+# Options:
+#   - ntlm: Windows NTLM authentication (works for local and domain accounts)
+#   - kerberos: Kerberos authentication (requires domain setup)
+#   - basic: Basic HTTP authentication (not recommended)
+#   - credssp: CredSSP delegation (for double-hop scenarios)
+#
+# NTLM works in most scenarios and doesn't require extra setup
 
-# Ignore SSL certificate validation (safe for lab, not production!)
 ansible_winrm_server_cert_validation: ignore
+# Whether to validate SSL certificates
+# Options: validate, ignore
+# 'ignore' is safe for labs where you're using self-signed certs
+# In production, use 'validate' with proper certificates
 
-# SOCKS5 proxy for WinRM connections through the jump host
-# This tunnels WinRM traffic through ssh.cyberrange.rit.edu
 ansible_winrm_proxy: socks5h://ssh.cyberrange.rit.edu:1080
+# SOCKS5 proxy for WinRM connections
+# This tunnels WinRM traffic through the jump host
+#
+# WHY A PROXY:
+# - Windows VMs are on a private network (10.10.10.x)
+# - You can't reach them directly from your laptop
+# - The SOCKS proxy routes traffic through ssh.cyberrange.rit.edu
+# - This allows Ansible to manage Windows even from outside the network
+#
+# PROXY URL FORMAT: socks5h://hostname:port
+# The 'h' in socks5h means DNS resolution happens on the proxy side
+
+# ------------------------------------------------------------------------------
+# WINRM TIMEOUTS AND SETTINGS
+# ------------------------------------------------------------------------------
+# Uncomment these if you experience connection issues:
+
+# ansible_winrm_read_timeout_sec: 60
+# How long to wait for a response (seconds)
+
+# ansible_winrm_operation_timeout_sec: 40
+# How long each WinRM operation can take
+
+# ansible_winrm_connection_timeout: 30
+# How long to wait for initial connection
 
 # ------------------------------------------------------------------------------
 # WINDOWS FEATURES TO INSTALL
 # ------------------------------------------------------------------------------
-# Students: Add/remove features for different attack scenarios
+# Windows Features are optional components that add functionality.
+# These are installed on ALL Windows VMs.
+#
+# DOCUMENTATION:
+# - win_feature module: https://docs.ansible.com/ansible/latest/collections/ansible/windows/win_feature_module.html
+# - Windows Features: https://learn.microsoft.com/en-us/windows-server/administration/server-manager/install-or-uninstall-roles-role-services-or-features
 
-# Features to install on all Windows machines
 windows_common_features:
   - name: TelnetClient
     state: present
+    # Telnet client for testing connectivity
+    # Usage: telnet hostname port
+
   - name: SNMP-Service
     state: present
+    # SNMP (Simple Network Management Protocol)
+    # Used for network monitoring and management
+    # ATTACK NOTE: SNMP community strings can be vulnerable
+
+# ADDING MORE FEATURES:
+# Find feature names with PowerShell: Get-WindowsFeature
+# Common features for competitions:
+#   - Web-Server (IIS web server)
+#   - Web-Ftp-Server (FTP service)
+#   - FS-SMB1 (SMBv1 - VULNERABLE!)
+#   - RSAT-AD-Tools (AD management tools)
 
 # ------------------------------------------------------------------------------
 # RDP (REMOTE DESKTOP) CONFIGURATION
 # ------------------------------------------------------------------------------
-# Enable RDP on all Windows hosts for remote access
+# RDP allows graphical remote access to Windows desktops.
+#
+# DOCUMENTATION:
+# - Enable RDP: https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/clients/remote-desktop-allow-access
 
-# RDP settings
 rdp_enabled: true
+# Enable or disable RDP on Windows hosts
+
 rdp_port: 3389
+# RDP port (3389 is standard)
+# Change this if you need non-standard ports for your competition
 
-# Allow RDP connections from any host (change for security scenarios)
 rdp_allow_connections: true
+# Allow remote connections to the computer
 
-# Network Level Authentication (disable for easier testing)
-# Students: Try enabling this for credential relay attack practice!
 rdp_nla_enabled: false
+# Network Level Authentication
+# When true: Requires authentication before showing login screen
+# When false: Shows login screen directly (easier for testing)
+#
+# ATTACK NOTE: NLA being disabled allows credential relay attacks
+# Blue Team: Enable NLA for better security
 
 # ------------------------------------------------------------------------------
 # WINDOWS DEFENDER SETTINGS
 # ------------------------------------------------------------------------------
-# Students: Modify these for attack/defense exercises
+# Windows Defender is the built-in antivirus/antimalware solution.
+#
+# DOCUMENTATION:
+# - Defender Overview: https://learn.microsoft.com/en-us/microsoft-365/security/defender-endpoint/microsoft-defender-antivirus-windows
 
-# Disable Windows Defender for testing (re-enable for defense scenarios)
 windows_defender_disabled: true
+# Disable Windows Defender entirely
+# true = Defender is OFF (easier for Red Team attack practice)
+# false = Defender is ON (realistic defense scenario)
+#
+# COMPETITION SCENARIOS:
+# - Red Team practice: Disable Defender to focus on techniques
+# - Defense practice: Enable Defender and configure properly
 
-# Real-time protection (turn off for easier attack practice)
 windows_defender_realtime_protection: false
+# Real-time protection scans files as they're accessed
+# true = Files scanned in real-time
+# false = No automatic scanning
+#
+# When disabled, malware can execute without immediate detection
 
 # ------------------------------------------------------------------------------
 # FIREWALL SETTINGS
 # ------------------------------------------------------------------------------
-# Students: Useful for network security scenarios
+# Windows Firewall controls network traffic to/from the server.
+#
+# DOCUMENTATION:
+# - Windows Firewall: https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/
 
-# Firewall state (enable for defense exercises)
 windows_firewall_enabled: false
+# Enable or disable Windows Firewall
+# false = Firewall is OFF (all traffic allowed)
+# true = Firewall is ON (only allowed traffic passes)
+#
+# NOTE: OpenStack security groups provide network-level filtering
+# The Windows firewall is an additional layer of host-based filtering
 
-# Firewall profiles to configure
 windows_firewall_profiles:
-  - Domain
-  - Private
-  - Public
+  - Domain    # Applied when connected to a domain network
+  - Private   # Applied on private/home networks
+  - Public    # Applied on public networks (most restrictive)
+# Profiles to configure (when firewall is enabled)
+
+# ==============================================================================
+# CONNECTION TROUBLESHOOTING
+# ==============================================================================
+#
+# PROBLEM: "Connection refused" or "Unable to connect"
+# SOLUTIONS:
+#   1. Check WinRM is running: Get-Service WinRM
+#   2. Verify port 5985 is open: Test-NetConnection <ip> -Port 5985
+#   3. Wait longer after boot (Windows takes 15-20 min)
+#   4. Check security groups allow 5985/5986
+#
+# PROBLEM: "Authentication failed"
+# SOLUTIONS:
+#   1. Verify username/password in inventory
+#   2. Try format: ansible_user: Administrator
+#   3. For domain accounts: ansible_user: DOMAIN\username
+#   4. Check the user exists and password is correct
+#
+# PROBLEM: "Operation timed out"
+# SOLUTIONS:
+#   1. Increase timeout values (uncomment above)
+#   2. Check network connectivity through proxy
+#   3. Verify VM is running and responsive
+#
+# TESTING WINRM MANUALLY:
+# From a Windows machine on the network:
+#   Test-WSMan -ComputerName <ip> -Port 5985
+#   winrm identify -r:http://<ip>:5985 -auth:basic -u:username -p:password
+#
+# ==============================================================================
+# DOCUMENTATION LINKS
+# ==============================================================================
+#
+# ANSIBLE WINDOWS:
+# - Windows Guide: https://docs.ansible.com/ansible/latest/os_guide/windows_usage.html
+# - WinRM Setup: https://docs.ansible.com/ansible/latest/os_guide/windows_winrm.html
+# - Windows Modules: https://docs.ansible.com/ansible/latest/collections/ansible/windows/index.html
+#
+# WINDOWS SERVER:
+# - Features: https://learn.microsoft.com/en-us/windows-server/administration/server-manager/install-or-uninstall-roles-role-services-or-features
+# - RDP: https://learn.microsoft.com/en-us/windows-server/remote/remote-desktop-services/
+# - Firewall: https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/
+#
+# ==============================================================================

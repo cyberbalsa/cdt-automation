@@ -18,6 +18,14 @@
 # - Kerberoasting (attack service accounts if configured)
 # - AS-REP roasting (attack users without pre-auth)
 # - Targeted phishing (realistic usernames and roles)
+#
+# DOCUMENTATION LINKS:
+# - Ansible loops: https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_loops.html
+# - subelements filter: https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#combining-objects-and-subelements
+# - win_powershell module: https://docs.ansible.com/ansible/latest/collections/ansible/windows/win_powershell_module.html
+# - New-ADUser (PowerShell): https://learn.microsoft.com/en-us/powershell/module/activedirectory/new-aduser
+# - New-ADGroup (PowerShell): https://learn.microsoft.com/en-us/powershell/module/activedirectory/new-adgroup
+# - Add-ADGroupMember (PowerShell): https://learn.microsoft.com/en-us/powershell/module/activedirectory/add-adgroupmember
 
 # ------------------------------------------------------------------------------
 # STEP 1: Create Domain Groups
@@ -126,6 +134,27 @@
       }
   loop: "{{ du_users | subelements('groups') }}"
   when: du_users is defined and du_users | length > 0
+  # SUBELEMENTS FILTER EXPLAINED:
+  # This is an advanced Ansible construct for nested loops!
+  # Docs: https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_filters.html#combining-objects-and-subelements
+  #
+  # Given this data structure in group_vars/all.yml:
+  #   du_users:
+  #     - username: jdoe
+  #       groups: ["IT Staff", "Domain Users"]
+  #     - username: asmith
+  #       groups: ["Domain Admins", "IT Staff"]
+  #
+  # The subelements('groups') filter "flattens" it into pairs:
+  #   Iteration 1: item.0 = {username: jdoe, ...}, item.1 = "IT Staff"
+  #   Iteration 2: item.0 = {username: jdoe, ...}, item.1 = "Domain Users"
+  #   Iteration 3: item.0 = {username: asmith, ...}, item.1 = "Domain Admins"
+  #   Iteration 4: item.0 = {username: asmith, ...}, item.1 = "IT Staff"
+  #
+  # item.0 = The parent object (the user)
+  # item.1 = Each element from the nested list (each group name)
+  #
+  # This lets us add each user to ALL their groups with a single task!
 
 # ------------------------------------------------------------------------------
 # STEP 4: Verify User and Group Creation

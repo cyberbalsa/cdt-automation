@@ -20,6 +20,15 @@
 # - Attack NFS shares with domain credentials
 # - Exploit SSSD vulnerabilities
 # - Use Linux as a foothold for domain enumeration
+#
+# DOCUMENTATION LINKS:
+# - Ansible apt module: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/apt_module.html
+# - Ansible template module: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html
+# - Ansible lineinfile module: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/lineinfile_module.html
+# - Ansible handlers: https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_handlers.html
+# - realmd (domain join): https://www.freedesktop.org/software/realmd/docs/realm.html
+# - SSSD (authentication): https://sssd.io/docs/introduction.html
+# - Kerberos (MIT): https://web.mit.edu/kerberos/krb5-latest/doc/
 
 # ------------------------------------------------------------------------------
 # STEP 1: Update Package Cache and Install Required Packages
@@ -51,6 +60,17 @@
     dest: /etc/resolv.conf
     mode: '0644'
   notify: Restart sssd
+  # TEMPLATE MODULE EXPLAINED:
+  # - src: Jinja2 template file (looks in roles/linux_domain_member/templates/)
+  # - dest: Where to write the rendered file on the target machine
+  # - Templates can use variables like {{ domain_name }} which get replaced
+  # Docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html
+  #
+  # NOTIFY/HANDLER PATTERN:
+  # - notify: Triggers the named handler (Restart sssd) if this task changes something
+  # - Handlers run ONCE at the end of the play, even if notified multiple times
+  # - Handlers are defined in roles/linux_domain_member/handlers/main.yml
+  # Docs: https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_handlers.html
 
 # ------------------------------------------------------------------------------
 # STEP 3: Configure Kerberos
@@ -75,8 +95,20 @@
     executable: /bin/bash
   register: linux_domain_member_kinit_test
   changed_when: false
-  # Students: This gets a Kerberos ticket for the domain admin
-  # Tickets are stored in /tmp/krb5cc_* - potential attack target!
+  # KERBEROS COMMANDS EXPLAINED:
+  # - kinit: Obtains a Kerberos Ticket Granting Ticket (TGT) from the KDC (Domain Controller)
+  #          The TGT proves your identity and is used to request service tickets
+  #          Format: kinit username@REALM (realm must be UPPERCASE)
+  #          Docs: https://web.mit.edu/kerberos/krb5-latest/doc/user/user_commands/kinit.html
+  #
+  # - klist: Lists all Kerberos tickets in the credential cache
+  #          Shows TGT expiration time and any service tickets obtained
+  #          Docs: https://web.mit.edu/kerberos/krb5-latest/doc/user/user_commands/klist.html
+  #
+  # SECURITY NOTE FOR STUDENTS:
+  # - Tickets are stored in /tmp/krb5cc_* - potential attack target!
+  # - An attacker with access to this file can impersonate the user
+  # - This is the basis of "Pass-the-Ticket" attacks
 
 - name: Display Kerberos ticket information
   ansible.builtin.debug:
@@ -104,8 +136,18 @@
   when: ldm_domain_name not in linux_domain_member_realm_status.stdout
   register: linux_domain_member_realm_join
   changed_when: linux_domain_member_realm_join.rc == 0
-  # This creates the computer account in Active Directory
-  # Students: You'll see this machine appear in "AD Users and Computers"
+  # REALM JOIN EXPLAINED:
+  # - realm join: Joins this Linux machine to the Active Directory domain
+  #   Docs: https://www.freedesktop.org/software/realmd/docs/realm.html
+  #
+  # What happens behind the scenes:
+  # 1. Creates a computer account in AD (visible in "AD Users and Computers")
+  # 2. Generates a machine keytab file (/etc/krb5.keytab)
+  # 3. Configures SSSD to authenticate users against AD
+  # 4. Sets up PAM to allow domain user logins
+  #
+  # The password is piped via echo to avoid it appearing in command history
+  # --verbose shows detailed progress (useful for troubleshooting)
 
 # ------------------------------------------------------------------------------
 # STEP 5: Configure SSSD for Domain Authentication

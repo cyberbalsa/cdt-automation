@@ -4,11 +4,20 @@
 # ==============================================================================
 # These settings configure Linux machines to join the Windows Active Directory
 # Students: Linux + AD integration is great for mixed-environment attacks!
+#
+# DOCUMENTATION LINKS:
+# - Kerberos: https://web.mit.edu/kerberos/krb5-latest/doc/
+# - SSSD: https://sssd.io/docs/introduction.html
+# - SSSD + AD: https://sssd.io/docs/ad/ad-provider.html
+# - realmd: https://www.freedesktop.org/software/realmd/docs/
+# - PAM: https://github.com/linux-pam/linux-pam
+# - xRDP: https://github.com/neutrinolabs/xrdp/wiki
 
 # ------------------------------------------------------------------------------
 # KERBEROS CONFIGURATION
 # ------------------------------------------------------------------------------
 # Kerberos is the authentication protocol used by Active Directory
+# Docs: https://web.mit.edu/kerberos/krb5-latest/doc/admin/conf_files/krb5_conf.html
 
 # Kerberos realm (must be UPPERCASE of domain_name)
 kerberos_realm: CDT.LOCAL
@@ -25,20 +34,30 @@ kerberos_realm: CDT.LOCAL
 # ------------------------------------------------------------------------------
 # SSSD = System Security Services Daemon
 # This handles authentication against Active Directory on Linux
+# Docs: https://sssd.io/docs/introduction.html
+# Config file reference: https://manpages.debian.org/testing/sssd-common/sssd.conf.5.en.html
 
 # SSSD should enumerate users (show domain users in 'getent passwd')
+# When true: `getent passwd` shows all AD users (can be slow with many users)
+# When false: Only users who have logged in appear
 sssd_enumerate: true
 
 # Cache credentials for offline login
+# When true: Users can login even if AD is unreachable (using cached password)
+# Security tradeoff: Cached credentials can be extracted from /var/lib/sss/db/
 sssd_cache_credentials: true
 
-# Use fully qualified names (username@CDT.local) or simple names
+# Use fully qualified names (username@CDT.local) or simple names (username)
+# When false: Login with just "jdoe" instead of "jdoe@CDT.local"
+# When true: Must use full UPN format for all logins
 sssd_use_fully_qualified_names: false
 
 # Automatically create home directories on first login
+# Creates /home/username (or /home/username@CDT.local if FQN enabled)
 sssd_auto_create_home: true
 
 # Default shell for domain users
+# Bash provides full shell features; alternatives: /bin/sh, /usr/bin/zsh
 sssd_default_shell: /bin/bash
 
 # ------------------------------------------------------------------------------
@@ -86,8 +105,8 @@ xrdp_enabled: true
 # RDP port (3389 is standard)
 xrdp_port: 3389
 
-# Desktop environment to use (XFCE is lightweight and fast)
-xrdp_desktop_environment: xfce4
+# Desktop environment to use (LXQT is pre-installed on the default images)
+xrdp_desktop_environment: lxqt
 
 # Allow domain users to RDP
 xrdp_allow_domain_users: true

@@ -1,210 +1,107 @@
-# CDT Automation - Ansible Configuration
+# Ansible Configuration Guide
 
-> **For Students**: This directory contains all the Ansible automation for deploying an Active Directory attack/defend lab environment.
+This directory contains Ansible automation for configuring servers. This document explains how Ansible works and how to extend it for your competition.
 
-## 🎯 What Does This Do?
+---
 
-This Ansible configuration automatically builds a complete Windows Active Directory domain with both Windows and Linux member machines. It's designed for cybersecurity students to practice:
+## Table of Contents
 
-- **Red Team**: Offensive security techniques (Kerberoasting, pass-the-hash, lateral movement)
-- **Blue Team**: Defensive monitoring and incident response
-- **Mixed Environment**: Realistic corporate network with Windows + Linux integration
+1. [What This Configuration Does](#what-this-configuration-does)
+2. [Directory Structure](#directory-structure)
+3. [How Ansible Works](#how-ansible-works)
+4. [Running Playbooks](#running-playbooks)
+5. [Understanding the Existing Configuration](#understanding-the-existing-configuration)
+6. [Adding New Services](#adding-new-services)
+7. [Creating Roles](#creating-roles)
+8. [Working with Variables](#working-with-variables)
+9. [Debugging Problems](#debugging-problems)
 
-## 📁 Directory Structure
+---
+
+## What This Configuration Does
+
+This Ansible configuration sets up a Windows Active Directory domain environment:
+
+1. Promotes the first Windows server to a Domain Controller
+2. Joins remaining Windows servers to the domain
+3. Joins Linux servers to the domain (using SSSD and Kerberos)
+4. Creates domain user accounts
+5. Configures remote desktop access on all servers
+
+This is a foundation. Your competition will need additional configuration for web servers, databases, mail servers, scoring systems, and other services.
+
+---
+
+## Directory Structure
 
 ```
 ansible/
-├── playbooks/              # Automation playbooks (what to do)
-│   ├── site.yml           # Main playbook - runs everything
-│   ├── setup-domain-controller.yml
-│   ├── create-domain-users.yml
-│   ├── join-windows-domain.yml
-│   ├── join-linux-domain.yml
-│   ├── setup-rdp-windows.yml
-│   └── setup-rdp-linux.yml
-├── roles/                  # Reusable automation components
-│   ├── domain_controller/ # AD DC setup
-│   ├── linux_domain_member/ # Linux AD integration
-│   └── domain_users/      # User/group creation
-├── group_vars/            # Configuration variables
-│   ├── all.yml           # Global settings (domain name, users)
-│   ├── windows.yml       # Windows-specific settings
-│   ├── windows_dc.yml    # Domain controller settings
-│   └── linux_members.yml # Linux-specific settings
-├── inventory/             # List of servers
-│   └── production.ini    # Auto-generated from OpenTofu
-├── ansible.cfg           # Ansible configuration
-└── README.md            # This file
+  ansible.cfg              # Ansible settings (connection options, defaults)
+
+  inventory/
+    production.ini         # Server list - auto-generated, do not edit manually
+
+  group_vars/
+    all.yml               # Variables for ALL servers
+    windows.yml           # Variables for Windows servers only
+    windows_dc.yml        # Variables for Domain Controller only
+    linux_members.yml     # Variables for Linux servers only
+
+  playbooks/
+    site.yml              # Main playbook - runs everything in order
+    setup-domain-controller.yml
+    create-domain-users.yml
+    join-windows-domain.yml
+    join-linux-domain.yml
+    setup-rdp-windows.yml
+    setup-rdp-linux.yml
+
+  roles/
+    domain_controller/    # Tasks for setting up AD Domain Controller
+    linux_domain_member/  # Tasks for joining Linux to domain
+    domain_users/         # Tasks for creating domain users
 ```
 
-## 🚀 Quick Start
+### What Each Part Does
 
-### Prerequisites
+**ansible.cfg**: Contains settings that control how Ansible connects to servers. The important settings are the SSH jump host and WinRM proxy configuration. You generally do not need to change this.
 
-1. **OpenTofu infrastructure deployed**:
-   ```bash
-   cd opentofu
-   source ../app-cred-openrc.sh
-   tofu apply
-   cd ..
-   ```
+**inventory/production.ini**: Lists all servers with their IP addresses and connection details. This file is generated automatically by `import-tofu-to-ansible.py`. Do not edit it manually - your changes will be overwritten.
 
-2. **Generate Ansible inventory**:
-   ```bash
-   python3 import-tofu-to-ansible.py
-   ```
+**group_vars/**: Contains variables organized by server group. When Ansible runs against a server, it loads variables from files matching the server's groups.
 
-3. **Verify connectivity**:
-   ```bash
-   cd ansible
-   ansible all -m ping
-   ```
+**playbooks/**: Contains the automation scripts. Each playbook performs a specific task. The `site.yml` playbook imports all others in the correct order.
 
-### Full Deployment
+**roles/**: Contains reusable automation components. Each role handles a complete configuration task (like setting up Active Directory).
 
-Deploy everything in one command:
+---
 
-```bash
-cd ansible
-ansible-playbook playbooks/site.yml
+## How Ansible Works
+
+Ansible automates server configuration by:
+
+1. Reading an **inventory** file to know which servers exist
+2. Connecting to servers via SSH (Linux) or WinRM (Windows)
+3. Running **tasks** that make configuration changes
+4. Checking the result of each task before moving to the next
+
+### Key Concepts
+
+**Inventory**: A list of servers organized into groups. Example:
+```ini
+[web_servers]
+web-1 ansible_host=192.168.10.10
+web-2 ansible_host=192.168.10.11
+
+[database_servers]
+db-1 ansible_host=192.168.20.20
 ```
 
-**Expected runtime**: 30-45 minutes (includes multiple VM reboots)
-
-### Individual Playbooks
-
-Run specific steps:
-
-```bash
-# Just setup domain controller
-ansible-playbook playbooks/setup-domain-controller.yml
-
-# Just create users
-ansible-playbook playbooks/create-domain-users.yml
-
-# Just join Windows to domain
-ansible-playbook playbooks/join-windows-domain.yml
-
-# Just join Linux to domain
-ansible-playbook playbooks/join-linux-domain.yml
-
-# Just setup RDP
-ansible-playbook playbooks/setup-rdp-windows.yml
-ansible-playbook playbooks/setup-rdp-linux.yml
-```
-
-## 🔐 Default Credentials
-
-### Domain Administrator
-- **Username**: `Administrator` or `CDT\Administrator`
-- **Password**: `Cyberrange123!`
-
-### Domain Users (created by playbook)
-All domain users have password: `UserPass123!`
-
-| Username | Full Name | Groups | Notes |
-|----------|-----------|--------|-------|
-| jdoe | John Doe | Domain Users, IT Staff | Has sudo on Linux |
-| asmith | Alice Smith | Domain Users, IT Staff, **Domain Admins** | **HIGH VALUE TARGET** |
-| bwilson | Bob Wilson | Domain Users | Regular user |
-| mjohnson | Mary Johnson | Domain Users, Accounting | Regular user |
-| dlee | David Lee | Domain Users, Engineering | Regular user |
-
-### VM Local Accounts
-- **Linux**: `cyberrange:Cyberrange123!`
-- **Windows**: `cyberrange:Cyberrange123!`
-
-## 🎮 Using Your Lab
-
-### RDP Access
-
-**Windows Machines**:
-```bash
-# From Windows
-mstsc /v:<ip_address>:3389
-
-# From Linux/Mac
-xfreerdp /v:<ip_address> /u:CDT\\jdoe /p:UserPass123!
-```
-
-**Linux Machines (xRDP)**:
-```bash
-# Same as Windows, but select "Xorg" session at login
-xfreerdp /v:<ip_address> /u:jdoe /p:UserPass123!
-```
-
-### SSH Access (Linux Only)
-
-```bash
-# Domain user SSH
-ssh jdoe@<linux_ip>
-
-# Alternative format
-ssh jdoe@CDT.local@<linux_ip>
-```
-
-### Finding IP Addresses
-
-```bash
-# View inventory
-cat inventory/production.ini
-
-# Get specific host IPs
-ansible windows_dc --list-hosts
-ansible linux_members -m debug -a "var=ansible_host"
-```
-
-## 🛠️ Customizing Your Lab
-
-### Adding More Users
-
-Edit `group_vars/all.yml`:
-
-```yaml
-domain_users:
-  - username: tstark
-    firstname: Tony
-    surname: Stark
-    password: IAmIronMan123!
-    groups:
-      - Domain Users
-      - Engineering
-```
-
-Then re-run:
-```bash
-ansible-playbook playbooks/create-domain-users.yml
-```
-
-### Changing Domain Name
-
-Edit `group_vars/all.yml`:
-```yaml
-domain_name: MYCOMPANY.local
-domain_netbios_name: MYCOMPANY
-```
-
-Then **rebuild everything** (domain name can't be changed after deployment).
-
-### Creating Attack Scenarios
-
-**Example: Intentional Vulnerabilities**
-
-Edit `group_vars/windows_dc.yml`:
-```yaml
-enable_smbv1: true        # Vulnerable to EternalBlue
-enable_llmnr: true        # Vulnerable to Responder attacks
-weak_password_policy: true # Easy password cracking
-```
-
-### Adding Services
-
-Create a new playbook in `playbooks/`:
-
+**Playbook**: A YAML file containing tasks to run. Example:
 ```yaml
 ---
-- name: Install Web Server
-  hosts: linux_members
+- name: Configure Web Servers
+  hosts: web_servers
   become: true
   tasks:
     - name: Install Apache
@@ -213,238 +110,515 @@ Create a new playbook in `playbooks/`:
         state: present
 ```
 
-Run it:
-```bash
-ansible-playbook playbooks/install-webserver.yml
-```
+**Task**: A single action performed by Ansible. Each task uses a module.
 
-## 🔧 Troubleshooting
+**Module**: A built-in Ansible function that performs a specific action (install package, copy file, run command, etc.).
 
-### "No hosts matched" error
+**Role**: A collection of tasks, templates, and variables organized together for reuse.
 
-**Problem**: Inventory not generated or out of date
+**Variable**: A named value that can be used in playbooks. Variables let you customize behavior without changing code.
 
-**Solution**:
-```bash
-python3 import-tofu-to-ansible.py
-```
-
-### Playbook fails with connection timeout
-
-**Problem**: Jump host authentication or VM not ready
-
-**Solutions**:
-1. Verify SSH jump host works: `ssh sshjump@ssh.cyberrange.rit.edu`
-2. Check VMs are running: `cd opentofu && tofu show`
-3. Wait for VMs to finish booting (Windows takes 15 minutes)
-
-### Domain join fails
-
-**Problem**: DC not fully ready or DNS issues
-
-**Solutions**:
-1. Verify DC is running: `ansible windows_dc -m ansible.windows.win_ping`
-2. Wait 5-10 minutes after DC promotion
-3. Check DNS settings on members point to DC
-4. Re-run: `ansible-playbook playbooks/join-windows-domain.yml`
-
-### Linux domain join fails
-
-**Problem**: Time sync, DNS, or package issues
-
-**Solutions**:
-```bash
-# SSH into Linux machine
-ssh cyberrange@<linux_ip>
-
-# Check time (must be within 5 minutes of DC)
-date
-
-# Check DNS
-nslookup CDT.local
-
-# Check Kerberos
-kinit Administrator@CDT.LOCAL
-klist
-
-# Manual join for debugging
-sudo realm join -U Administrator CDT.local -v
-```
-
-### xRDP black screen
-
-**Problem**: Desktop environment not loading
-
-**Solutions**:
-1. At login, select **"Xorg"** session (not "Default")
-2. Check logs: `ssh into machine && sudo tail -f /var/log/xrdp.log`
-3. Verify XFCE installed: `dpkg -l | grep xfce`
-
-## 📚 Learning Resources
-
-### Understanding the Code
-
-Every playbook and role is **heavily commented** with explanations for students. Read through:
-
-- `playbooks/setup-domain-controller.yml` - Learn AD deployment
-- `roles/domain_controller/tasks/main.yml` - See PowerShell automation
-- `roles/linux_domain_member/tasks/main.yml` - Learn Linux AD integration
-- `group_vars/*.yml` - Understand configuration management
-
-### Attack Techniques Covered
-
-Each playbook includes comments on:
-- What vulnerabilities are being created
-- Which attack techniques apply
-- Defensive measures to try
-- Tools to use (BloodHound, mimikatz, CrackMapExec, etc.)
-
-### Best Practices for Students
-
-1. **Read the playbooks** - They're teaching tools, not just automation
-2. **Experiment** - Break things, rebuild, learn from failures
-3. **Document** - Keep notes on what works and what doesn't
-4. **Practice both sides** - Try attacks, then implement defenses
-5. **Use version control** - Commit your changes to learn Git
-
-## 🎓 Attack/Defend Scenarios
-
-### Red Team Scenarios
-
-1. **Initial Access**
-   - Password spraying against domain users
-   - Phishing simulation (manual)
-
-2. **Credential Dumping**
-   - mimikatz on Windows machines
-   - Extract Kerberos tickets from Linux
-
-3. **Lateral Movement**
-   - Pass-the-hash attacks
-   - WinRM/RDP with stolen credentials
-
-4. **Privilege Escalation**
-   - Exploit weak sudo config on Linux
-   - Kerberoasting service accounts
-
-5. **Domain Dominance**
-   - DCSync attack against domain controller
-   - Golden ticket creation
-
-### Blue Team Scenarios
-
-1. **Monitoring**
-   - Enable Windows Event Logging
-   - Set up syslog on Linux
-   - Monitor failed logins
-
-2. **Hardening**
-   - Disable SMBv1
-   - Implement account lockout policies
-   - Enable NLA for RDP
-
-3. **Incident Response**
-   - Detect mimikatz usage
-   - Identify lateral movement
-   - Find persistence mechanisms
-
-4. **Forensics**
-   - Analyze Windows Event Logs
-   - Review /var/log on Linux
-   - Track attacker timeline
-
-## 🔄 Rebuilding Individual VMs
-
-If a VM gets corrupted or you want to start fresh:
-
-```bash
-# From project root
-./rebuild-vm.sh <vm_ip>
-
-# Example
-./rebuild-vm.sh 10.10.10.21  # Rebuild DC
-./rebuild-vm.sh 10.10.10.31  # Rebuild first Linux VM
-```
-
-This script:
-1. Taints the VM in OpenTofu
-2. Rebuilds just that VM
-3. Regenerates inventory
-4. Re-runs Ansible on that VM
-
-## 📊 Checking Your Work
-
-### Verify Domain Controller
-
-```bash
-ansible-playbook playbooks/setup-domain-controller.yml --check
-```
-
-### List All Domain Users
-
-```bash
-ansible windows_dc -m ansible.windows.win_powershell -a "script='Get-ADUser -Filter * | Select-Object Name,SamAccountName'"
-```
-
-### Test Domain User Login
-
-```bash
-# Windows
-ansible windows -m ansible.windows.win_powershell -a "script='whoami'"
-
-# Linux (after domain join)
-ansible linux_members -m shell -a "getent passwd jdoe"
-```
-
-## 🏆 Advanced: Creating Custom Roles
-
-Students can create their own roles for reusable tasks:
-
-```bash
-mkdir -p roles/my_custom_role/{tasks,defaults,handlers,templates}
-```
-
-Example use cases:
-- Install vulnerable web applications
-- Deploy honeypot services
-- Configure custom logging
-- Set up attacker tools (in isolated environment!)
-
-## 📖 Additional Documentation
-
-- **Project README**: `../CLAUDE.md` (overall project documentation)
-- **OpenTofu Config**: `../opentofu/` (infrastructure as code)
-- **Linting**: Run `../check.sh` before committing changes
-
-## ⚠️ Security Warning
-
-This lab creates **intentionally vulnerable** systems for educational purposes:
-
-- ❌ Weak passwords
-- ❌ Disabled security features
-- ❌ Known vulnerabilities enabled
-- ❌ No network segmentation
-
-**NEVER** deploy this in production or on public networks!
-
-**ALWAYS** use in isolated lab environments only!
-
-## 🤝 Contributing
-
-Students: Found a bug or want to add a feature?
-
-1. Create a new branch
-2. Make your changes
-3. Run `../check.sh` to lint
-4. Commit with descriptive messages
-5. Share with your instructor
-
-## 📝 License
-
-Educational use only - Check with your institution for usage policies.
+**Handler**: A special task that runs only when triggered by another task (commonly used to restart services after configuration changes).
 
 ---
 
-**Questions?** Check the comments in the playbooks or ask your instructor!
+## Running Playbooks
 
-**Happy Hacking!** (Responsibly) 🎓🔒
+### From Your Local Machine
+
+Due to network restrictions, running Ansible from your local machine can be unreliable, especially for Windows servers. The recommended approach is to run from inside the network.
+
+### From Inside the Network (Recommended)
+
+1. SSH to one of the Linux servers (typically the fourth one):
+```bash
+ssh -J sshjump@ssh.cyberrange.rit.edu cyberrange@<linux-floating-ip>
+```
+
+2. Install Ansible if not already installed:
+```bash
+sudo apt update
+sudo apt install -y ansible
+```
+
+3. Copy the ansible directory to the server (if not already there):
+```bash
+# Run this from your local machine
+scp -r -J sshjump@ssh.cyberrange.rit.edu ansible/ cyberrange@<linux-floating-ip>:~/
+```
+
+4. Run playbooks:
+```bash
+cd ~/ansible
+ansible-playbook playbooks/site.yml
+```
+
+### Running Individual Playbooks
+
+You do not have to run everything at once. Run individual playbooks:
+
+```bash
+# Just set up the domain controller
+ansible-playbook playbooks/setup-domain-controller.yml
+
+# Just create domain users
+ansible-playbook playbooks/create-domain-users.yml
+```
+
+### Common Command Options
+
+```bash
+# Run with verbose output (helpful for debugging)
+ansible-playbook playbooks/site.yml -v
+ansible-playbook playbooks/site.yml -vvv   # Very verbose
+
+# Run only against specific hosts
+ansible-playbook playbooks/site.yml --limit web-1
+
+# Check what would change without making changes
+ansible-playbook playbooks/site.yml --check
+
+# Run a single task by its tag
+ansible-playbook playbooks/site.yml --tags "install_apache"
+```
+
+### Testing Connectivity
+
+Before running playbooks, verify Ansible can reach all servers:
+
+```bash
+# Test all servers
+ansible all -m ping
+
+# Test Windows servers
+ansible windows -m ansible.windows.win_ping
+
+# Test Linux servers
+ansible linux_members -m ping
+```
+
+---
+
+## Understanding the Existing Configuration
+
+### The site.yml Playbook
+
+The `site.yml` file is the master playbook. It imports other playbooks in order:
+
+```yaml
+- name: Validate inventory
+  # Checks that required groups exist
+
+- name: Setup Domain Controller
+  import_playbook: setup-domain-controller.yml
+
+- name: Create Domain Users
+  import_playbook: create-domain-users.yml
+
+- name: Join Windows Members to Domain
+  import_playbook: join-windows-domain.yml
+
+- name: Join Linux Members to Domain
+  import_playbook: join-linux-domain.yml
+
+- name: Setup RDP on Windows
+  import_playbook: setup-rdp-windows.yml
+
+- name: Setup xRDP on Linux
+  import_playbook: setup-rdp-linux.yml
+```
+
+The order matters. The domain controller must be set up before users can be created, and users must exist before other servers join the domain.
+
+### The domain_controller Role
+
+Look at `roles/domain_controller/tasks/main.yml` to see how the domain is set up. Key tasks:
+
+1. Install AD Domain Services feature
+2. Promote the server to a domain controller
+3. Configure DNS
+4. Reboot and wait for services
+
+### The linux_domain_member Role
+
+Look at `roles/linux_domain_member/tasks/main.yml` to see how Linux servers join the domain:
+
+1. Install required packages (realmd, sssd, krb5)
+2. Configure DNS to point to the domain controller
+3. Discover the domain
+4. Join the domain using realm join
+5. Configure SSSD for user lookups
+6. Configure PAM for logins
+
+### Group Variables
+
+Variables are defined in `group_vars/`:
+
+- `all.yml`: Domain name, admin credentials, domain users list
+- `windows.yml`: Windows connection settings (WinRM, proxy)
+- `windows_dc.yml`: Domain controller features and attack surface settings
+- `linux_members.yml`: Kerberos, SSSD, and xRDP settings
+
+---
+
+## Adding New Services
+
+To add a new service to your competition:
+
+### Step 1: Decide on the Approach
+
+For simple configurations (one or two tasks), add tasks directly to a playbook.
+
+For complex configurations (multiple tasks, templates, handlers), create a role.
+
+### Step 2: Create a Playbook
+
+Create a new file in `playbooks/`:
+
+```yaml
+# playbooks/setup-webserver.yml
+---
+- name: Configure Web Servers
+  hosts: web_servers
+  become: true
+
+  tasks:
+    - name: Install Apache
+      ansible.builtin.apt:
+        name: apache2
+        state: present
+        update_cache: true
+
+    - name: Start Apache
+      ansible.builtin.service:
+        name: apache2
+        state: started
+        enabled: true
+
+    - name: Copy website files
+      ansible.builtin.copy:
+        src: files/website/
+        dest: /var/www/html/
+```
+
+### Step 3: Add the Inventory Group
+
+Update `import-tofu-to-ansible.py` to create the inventory group for your new server type. Then run the script to regenerate the inventory.
+
+### Step 4: Add to site.yml
+
+Import your new playbook in `site.yml`:
+
+```yaml
+- name: Configure Web Servers
+  import_playbook: setup-webserver.yml
+```
+
+Place it in the correct position. If your service depends on another (like needing the domain to be set up), put it after that dependency.
+
+### Step 5: Test
+
+Run your playbook:
+
+```bash
+ansible-playbook playbooks/setup-webserver.yml -v
+```
+
+---
+
+## Creating Roles
+
+Roles are better than inline tasks when you have:
+- Multiple related tasks
+- Template files to copy
+- Handlers that restart services
+- Default variables that can be overridden
+
+### Role Directory Structure
+
+```
+roles/
+  myservice/
+    tasks/
+      main.yml        # Required: tasks to run
+    handlers/
+      main.yml        # Optional: handlers (restart commands)
+    templates/
+      config.j2       # Optional: template files
+    files/
+      staticfile.txt  # Optional: static files
+    defaults/
+      main.yml        # Optional: default variable values
+```
+
+### Example: Creating a Web Server Role
+
+1. Create the directory structure:
+```bash
+mkdir -p roles/webserver/{tasks,handlers,templates,files,defaults}
+```
+
+2. Create `roles/webserver/defaults/main.yml`:
+```yaml
+---
+web_port: 80
+web_document_root: /var/www/html
+```
+
+3. Create `roles/webserver/tasks/main.yml`:
+```yaml
+---
+- name: Install Apache
+  ansible.builtin.apt:
+    name: apache2
+    state: present
+    update_cache: true
+
+- name: Deploy Apache configuration
+  ansible.builtin.template:
+    src: apache-site.conf.j2
+    dest: /etc/apache2/sites-available/competition.conf
+  notify: Restart Apache
+
+- name: Enable the site
+  ansible.builtin.command:
+    cmd: a2ensite competition
+  notify: Restart Apache
+
+- name: Disable default site
+  ansible.builtin.command:
+    cmd: a2dissite 000-default
+  notify: Restart Apache
+
+- name: Ensure Apache is running
+  ansible.builtin.service:
+    name: apache2
+    state: started
+    enabled: true
+```
+
+4. Create `roles/webserver/handlers/main.yml`:
+```yaml
+---
+- name: Restart Apache
+  ansible.builtin.service:
+    name: apache2
+    state: restarted
+```
+
+5. Create `roles/webserver/templates/apache-site.conf.j2`:
+```apache
+<VirtualHost *:{{ web_port }}>
+    ServerName {{ inventory_hostname }}
+    DocumentRoot {{ web_document_root }}
+
+    <Directory {{ web_document_root }}>
+        AllowOverride All
+        Require all granted
+    </Directory>
+
+    ErrorLog ${APACHE_LOG_DIR}/error.log
+    CustomLog ${APACHE_LOG_DIR}/access.log combined
+</VirtualHost>
+```
+
+6. Create a playbook that uses the role:
+```yaml
+# playbooks/setup-webserver.yml
+---
+- name: Configure Web Servers
+  hosts: web_servers
+  become: true
+  roles:
+    - webserver
+```
+
+---
+
+## Working with Variables
+
+### Where to Define Variables
+
+**For all servers**: `group_vars/all.yml`
+
+**For a specific group**: `group_vars/groupname.yml`
+
+**In a role**: `roles/rolename/defaults/main.yml`
+
+**In a playbook**:
+```yaml
+- name: Configure Servers
+  hosts: all
+  vars:
+    my_variable: value
+```
+
+### Using Variables in Tasks
+
+Reference variables with double curly braces:
+
+```yaml
+- name: Create user
+  ansible.builtin.user:
+    name: "{{ username }}"
+    password: "{{ password }}"
+```
+
+### Variable Precedence
+
+Ansible has a complex variable precedence system. In general:
+1. Variables in playbooks override role defaults
+2. Variables in `group_vars` override playbook variables
+3. Variables passed on command line override everything
+
+For simplicity, define variables in `group_vars` files and avoid duplicating them in multiple places.
+
+### Lists and Loops
+
+Define a list:
+```yaml
+# In group_vars/all.yml
+users:
+  - username: jdoe
+    fullname: John Doe
+    password: secret
+  - username: asmith
+    fullname: Alice Smith
+    password: secret2
+```
+
+Use it in a task:
+```yaml
+- name: Create users
+  ansible.builtin.user:
+    name: "{{ item.username }}"
+    password: "{{ item.password }}"
+  loop: "{{ users }}"
+```
+
+---
+
+## Debugging Problems
+
+### Enable Verbose Output
+
+Add `-v`, `-vv`, or `-vvv` for increasing verbosity:
+
+```bash
+ansible-playbook playbooks/site.yml -vvv
+```
+
+### Check Mode (Dry Run)
+
+See what would change without making changes:
+
+```bash
+ansible-playbook playbooks/site.yml --check
+```
+
+### Run Ad-Hoc Commands
+
+Test commands directly:
+
+```bash
+# Run a command on all servers
+ansible all -m command -a "hostname"
+
+# Check a service status
+ansible web_servers -m command -a "systemctl status apache2"
+
+# Get facts about a server
+ansible web-1 -m setup
+```
+
+### Common Errors
+
+**"No hosts matched"**: The inventory group does not exist or is empty. Regenerate inventory with `python3 import-tofu-to-ansible.py`.
+
+**"Connection refused" or timeout**: Server is not reachable. Check:
+- Is the server running? (Look in OpenStack dashboard)
+- Is the IP correct? (Check inventory file)
+- Are security groups allowing the connection?
+- For Windows: Wait 15-20 minutes after creation for WinRM to be ready
+
+**"Authentication failed"**: Wrong username or password. Check:
+- Inventory file has correct credentials
+- `group_vars` files have correct passwords
+- For domain users, domain must be set up first
+
+**"Permission denied"**: The task needs elevated privileges. Add `become: true` to the play or task.
+
+**Task fails but no clear error**: Add `-vvv` for verbose output. Look for error messages in the output.
+
+### Checking Server State
+
+SSH to the server and check manually:
+
+```bash
+# Check if a service is running
+systemctl status apache2
+
+# Check if a package is installed
+dpkg -l | grep apache2
+
+# Check if a file exists
+ls -la /etc/apache2/sites-available/
+
+# Check logs
+journalctl -u apache2 -n 50
+```
+
+---
+
+## Default Credentials
+
+| Account Type | Username | Password |
+|--------------|----------|----------|
+| Linux local account | cyberrange | Cyberrange123! |
+| Windows local account | cyberrange | Cyberrange123! |
+| Domain Administrator | Administrator | Cyberrange123! |
+| Domain users (jdoe, asmith, etc.) | (username) | UserPass123! |
+
+---
+
+## Useful Ansible Modules
+
+### For Linux Servers
+
+| Module | Purpose | Example |
+|--------|---------|---------|
+| `apt` | Install packages | `apt: name=nginx state=present` |
+| `service` | Manage services | `service: name=nginx state=started` |
+| `copy` | Copy files | `copy: src=file.txt dest=/path/file.txt` |
+| `template` | Copy templates with variables | `template: src=config.j2 dest=/etc/config` |
+| `file` | Create/modify files and directories | `file: path=/dir state=directory` |
+| `user` | Create users | `user: name=john password=...` |
+| `command` | Run commands | `command: cmd="whoami"` |
+| `lineinfile` | Edit lines in files | `lineinfile: path=/etc/file line="text"` |
+
+### For Windows Servers
+
+| Module | Purpose | Example |
+|--------|---------|---------|
+| `win_feature` | Install Windows features | `win_feature: name=Web-Server state=present` |
+| `win_service` | Manage services | `win_service: name=W3SVC state=started` |
+| `win_copy` | Copy files | `win_copy: src=file.txt dest=C:\file.txt` |
+| `win_template` | Copy templates | `win_template: src=config.j2 dest=C:\config.txt` |
+| `win_user` | Create users | `win_user: name=john password=...` |
+| `win_command` | Run commands | `win_command: whoami` |
+| `win_powershell` | Run PowerShell | `win_powershell: script="Get-Service"` |
+
+See the Ansible documentation for complete module references:
+- Linux: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/
+- Windows: https://docs.ansible.com/ansible/latest/collections/ansible/windows/
+
+---
+
+## Next Steps
+
+1. Read through the existing playbooks to understand the patterns used
+2. Identify what additional services your competition needs
+3. Create roles for each service type
+4. Create playbooks that use those roles
+5. Add the playbooks to site.yml
+6. Test each playbook individually before running everything together
