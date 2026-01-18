@@ -223,6 +223,192 @@ Common issues:
   regex: "success"
 ```
 
+## Flag System (Attack/Defend Mechanics)
+
+The flag system adds attack/defend mechanics where Red Team must maintain persistent access to score points - they can't just destroy everything!
+
+### Why Do We Need This?
+
+Without flags, Red Team can simply:
+1. Break into a system
+2. Delete everything or crash services
+3. Blue Team loses points, Red Team doesn't care
+
+With flags:
+1. Red Team must maintain **stealthy** access
+2. Breaking services stops Red Team's flag points too!
+3. Blue Team is incentivized to hunt for flags, not just keep services running
+
+This mirrors real-world scenarios where attackers want to maintain persistent access for data theft or espionage, not just cause destruction.
+
+### How It Works (Step by Step)
+
+```
+┌─────────────────────────────────────────────────────────────────┐
+│                    FLAG SYSTEM FLOW                              │
+├─────────────────────────────────────────────────────────────────┤
+│                                                                  │
+│   RED TEAM                         SCORING SERVER                │
+│   ────────                         ──────────────                │
+│                                                                  │
+│   1. Get token ──────────────────► Token Server (port 8081)     │
+│      curl http://scoring:8081/token                             │
+│                                    Returns: "a1b2c3d4..."       │
+│                                                                  │
+│   2. Compromise a box                                           │
+│      (SSH, exploit, etc.)                                       │
+│                                                                  │
+│   3. Plant flag ────────────────►  Blue Team Box                │
+│      echo "a1b2c3d4" > /var/www/html/flag.txt                  │
+│                                                                  │
+│   4. Keep access (don't break it!)                              │
+│                                                                  │
+│                                    Every N rounds:              │
+│                                    ┌─────────────────────┐      │
+│                                    │ Flag Checker Script │      │
+│                                    └──────────┬──────────┘      │
+│                                               │                  │
+│                                    ┌──────────▼──────────┐      │
+│                                    │ Is service UP?      │      │
+│                                    └──────────┬──────────┘      │
+│                                               │                  │
+│                                    YES        │        NO       │
+│                                    ┌──────────▼──────────┐      │
+│                                    │ Search for flag.txt │      │
+│                                    └──────────┬──────────┘      │
+│                                               │                  │
+│                              FOUND            │      NOT FOUND  │
+│                              ┌────────────────▼────────────┐    │
+│                              │ Does flag contain token?    │    │
+│                              └────────────────┬────────────┘    │
+│                                               │                  │
+│                              YES              │             NO  │
+│                              ▼                ▼              ▼  │
+│                         FLAG_VALID      FLAG_NOT_FOUND  SERVICE_DOWN
+│                         (Red scores!)   (No points)     (No points)
+│                                                                  │
+│   BLUE TEAM                                                      │
+│   ─────────                                                      │
+│   5. See "DETECTED_N" on scoreboard (N = number of flags)       │
+│   6. Hunt for flag files: find / -name "flag.txt"               │
+│   7. Remove enemy flags: rm /var/www/html/flag.txt              │
+│                                                                  │
+└─────────────────────────────────────────────────────────────────┘
+```
+
+### Configuration
+
+Enable in `ansible/group_vars/scoring.yml`:
+
+```yaml
+# Enable the flag system
+scoring_flags_enabled: true
+
+# Points per valid flag per check interval
+scoring_flag_points: 5
+
+# Check flags every N service rounds
+# (e.g., 5 = every 5 minutes if scoring_delay is 60 seconds)
+scoring_flag_check_interval: 5
+
+# What filename Red Team must use
+scoring_flag_filename: "flag.txt"
+
+# Port for token retrieval server
+scoring_red_token_port: 8081
+```
+
+Add `flag_path` to each box you want to enable flags on:
+
+```yaml
+scoring_boxes:
+  - name: "webserver"
+    ip: "10.10.10.31"
+    flag_path: "/var/www/html"    # Where Red Team plants flags
+    checks:
+      - type: web
+        urls:
+          - path: "/"
+            status: 200
+      # Add flag check - uses 'cmd' type to run our script
+      - type: cmd
+        display: "Flag"
+        command: "/opt/scoring-engine/checkfiles/check_flag.py --service webserver-web --path /var/www/html"
+        regex: "FLAG_VALID"
+```
+
+### Red Team Instructions
+
+```bash
+# Step 1: Get your team's token from the scoring server
+TOKEN=$(curl -s http://<scoring-server>:8081/token)
+echo "My token is: $TOKEN"
+
+# Step 2: Compromise a target system (out of scope for this guide!)
+
+# Step 3: Plant a flag (must have write access to the configured path)
+echo "$TOKEN" > /var/www/html/flag.txt
+
+# Step 4: Verify your flag is planted
+cat /var/www/html/flag.txt
+
+# Step 5: Keep your access! Don't break the service or Blue Team might
+#         notice and kick you out. Stealthy persistence is the goal.
+
+# Tips:
+# - Plant flags in subdirectories too: /var/www/html/images/flag.txt
+# - The checker searches recursively, so hidden flags still count
+# - If you break the service, you stop earning flag points!
+```
+
+### Blue Team Defense
+
+```bash
+# Hunt for enemy flags across the entire system
+find / -name "flag.txt" 2>/dev/null
+
+# Check common web directories
+ls -la /var/www/html/
+
+# Remove enemy flags when found
+rm /var/www/html/flag.txt
+
+# Monitor for new files being created (requires inotify-tools)
+inotifywait -m -r /var/www/html -e create -e modify
+
+# Check the scoreboard for "DETECTED" alerts
+# The number tells you how many flags are planted (but not WHERE!)
+```
+
+### Understanding the Scoreboard
+
+| Display | Meaning | Who It Helps |
+|---------|---------|--------------|
+| `Flag: FLAG_VALID` | Red has a valid flag planted | Red Team (they're scoring!) |
+| `Flag: SERVICE_DOWN` | Service failed, no flag check | Neither (both lose) |
+| `Flag: FLAG_NOT_FOUND` | Service up but no valid flag | Blue Team (they're clear) |
+| `DETECTED_3` | 3 flags planted somewhere | Blue Team (time to hunt!) |
+| `CLEAR` | No flags detected | Blue Team (all clear!) |
+
+### Troubleshooting Flag Issues
+
+**Red Team: "My flag isn't scoring"**
+1. Is the service UP? Check the service check first
+2. Is your token correct? `curl http://scoring:8081/token`
+3. Is the flag in the right path? Check `flag_path` in config
+4. Is the file readable? Check permissions with `ls -la`
+
+**Blue Team: "I removed the flag but it still shows DETECTED"**
+1. Flags are checked every N rounds, not instantly
+2. There might be flags on OTHER boxes
+3. Check ALL your systems, not just one
+
+**Grey Team: "Flag system not working"**
+1. Is `scoring_flags_enabled: true` in your config?
+2. Did you redeploy after enabling? `ansible-playbook playbooks/setup-scoring-engine.yml`
+3. Check token server: `curl http://localhost:8081/token`
+4. Check logs: `journalctl -fu red-token-server`
+
 ## Learning More
 
 - **DWAYNE-INATOR-5000 Docs**: [DWAYNE-INATOR-5000/README.md](DWAYNE-INATOR-5000/README.md)
