@@ -1,0 +1,74 @@
+---
+# ==============================================================================
+# SCORING ENGINE ROLE - DEFAULT VARIABLES
+# ==============================================================================
+# This file defines default values for variables used by this Ansible role.
+#
+# WHAT ARE ROLE DEFAULTS?
+# When Ansible runs a role, it looks for variables in several places:
+# 1. defaults/main.yml (this file) - lowest priority, easily overridden
+# 2. vars/main.yml - higher priority, harder to override
+# 3. group_vars/ - variables for groups of hosts
+# 4. host_vars/ - variables for specific hosts
+# 5. Command line (-e flag) - highest priority
+#
+# WHY USE DEFAULTS?
+# Defaults provide sensible starting values so the role works "out of the box"
+# but can be customized by setting variables in group_vars/scoring.yml
+#
+# DOCUMENTATION:
+# - Ansible Variable Precedence: https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_variables.html#variable-precedence-where-should-i-put-a-variable
+# - Ansible Roles: https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_reuse_roles.html
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# INSTALLATION PATHS
+# ------------------------------------------------------------------------------
+# Where to install the scoring engine on the server
+
+# Directory where scoring engine files are installed
+# /opt is the standard location for optional/add-on software on Linux
+scoring_install_dir: /opt/scoring-engine
+
+# Name of the compiled binary (the actual program that runs)
+scoring_binary_name: dwayne-inator
+
+# ------------------------------------------------------------------------------
+# GO BUILD SETTINGS
+# ------------------------------------------------------------------------------
+# The scoring engine is written in Go and must be compiled before running
+
+# Additional flags to pass to 'go build' command
+# Leave empty for default build, or add flags like "-ldflags '-s -w'" to reduce binary size
+scoring_go_build_flags: ""
+
+# ------------------------------------------------------------------------------
+# SERVICE SETTINGS
+# ------------------------------------------------------------------------------
+# Configure how the scoring engine runs as a system service
+
+# Name of the systemd service (used with systemctl commands)
+# Example: systemctl status dwayne-inator
+scoring_service_name: dwayne-inator
+
+# Which Linux user runs the service
+# Using root for simplicity, but could be a dedicated service account for security
+scoring_service_user: root
+
+# ------------------------------------------------------------------------------
+# DEFAULT SCORING SETTINGS
+# ------------------------------------------------------------------------------
+# These provide fallback values if not specified in group_vars/scoring.yml
+# In practice, you should always define these in group_vars/scoring.yml
+
+scoring_event_name: "Competition"
+scoring_timezone: "America/New_York"
+scoring_start_paused: true
+scoring_verbose: true
+scoring_port: 8080
+scoring_delay: 60
+scoring_jitter: 5
+scoring_timeout: 10
+scoring_service_points: 10
+scoring_sla_threshold: 5
+scoring_sla_points: 10

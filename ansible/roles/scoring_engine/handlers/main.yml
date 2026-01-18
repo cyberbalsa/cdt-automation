@@ -1,0 +1,38 @@
+---
+# ==============================================================================
+# SCORING ENGINE ROLE - HANDLERS
+# ==============================================================================
+# Handlers are special tasks that only run when "notified" by other tasks.
+#
+# WHY USE HANDLERS?
+# Imagine you change a configuration file. You need to restart the service
+# for changes to take effect. But what if multiple tasks change config files?
+# You don't want to restart after EVERY change - that's wasteful and slow.
+#
+# Handlers solve this: tasks "notify" a handler when they make changes,
+# and Ansible runs each handler ONCE at the end, no matter how many times
+# it was notified.
+#
+# EXAMPLE FLOW:
+# 1. Task "Deploy config file" changes dwayne.conf -> notifies "restart scoring engine"
+# 2. Task "Deploy service file" changes the .service file -> notifies "restart scoring engine"
+# 3. All tasks complete
+# 4. Handler "restart scoring engine" runs ONCE (not twice!)
+#
+# DOCUMENTATION:
+# - Ansible Handlers: https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_handlers.html
+# ==============================================================================
+
+# Restart the scoring engine service
+# Called when configuration or service files change
+- name: Restart scoring engine
+  ansible.builtin.systemd:
+    name: "{{ scoring_service_name }}"
+    state: restarted
+    daemon_reload: true  # Also reload systemd to pick up service file changes
+
+# Reload systemd configuration without restarting services
+# Called when only the .service file changes but we want to defer restart
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true

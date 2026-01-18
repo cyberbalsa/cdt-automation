@@ -1,0 +1,9 @@
+---
+# ==============================================================================
+# SCORING ENGINE ROLE - TASKS
+# ==============================================================================
+# Placeholder - will be implemented in next tasks
+
+- name: Placeholder task
+  ansible.builtin.debug:
+    msg: "Scoring engine role tasks will be implemented"
