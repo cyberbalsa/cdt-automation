@@ -109,6 +109,18 @@ variable "debian_image_name" {
   # - kali-2024 (for Red Team attack machines)
 }
 
+variable "scoring_image_name" {
+  description = "Name of the image for scoring servers"
+  type        = string
+  default     = "Ubuntu2404Desktop"
+}
+
+variable "kali_image_name" {
+  description = "Name of the Kali Linux image for Red Team"
+  type        = string
+  default     = "kali-2024"
+}
+
 # ------------------------------------------------------------------------------
 # VM SIZE CONFIGURATION
 # ------------------------------------------------------------------------------
@@ -160,35 +172,28 @@ variable "keypair" {
 # ------------------------------------------------------------------------------
 # These variables control how many VMs to create.
 
-variable "windows_count" {
-  description = "Number of Windows VMs to create"
+variable "scoring_count" {
+  description = "Number of scoring servers to create in main project"
   type        = number
-  default     = 2
-
-  # COUNT BEHAVIOR:
-  # - The FIRST Windows VM becomes the Domain Controller
-  # - Additional VMs become domain member servers
-  # - IP addresses: 10.10.10.21, 10.10.10.22, 10.10.10.23, etc.
-  #
-  # For a basic competition, you need at least:
-  # - 1 Domain Controller
-  # - 1+ Member servers for Blue Team to defend
-  # - Consider: 1 per Blue Team member, or shared servers
+  default     = 1
 }
 
-variable "debian_count" {
-  description = "Number of Linux VMs to create"
+variable "blue_windows_count" {
+  description = "Number of Blue Team Windows VMs (first becomes Domain Controller)"
   type        = number
   default     = 2
+}
 
-  # COUNT BEHAVIOR:
-  # - All Linux VMs join the Windows domain
-  # - IP addresses: 10.10.10.31, 10.10.10.32, 10.10.10.33, etc.
-  #
-  # For a competition, consider:
-  # - Web servers, database servers, mail servers
-  # - One VM per Blue Team member as workstations
-  # - Ansible control node (run playbooks from inside the network)
+variable "blue_linux_count" {
+  description = "Number of Blue Team Linux VMs"
+  type        = number
+  default     = 2
+}
+
+variable "red_kali_count" {
+  description = "Number of Red Team Kali attack VMs"
+  type        = number
+  default     = 2
 }
 
 # ------------------------------------------------------------------------------
@@ -196,43 +201,16 @@ variable "debian_count" {
 # ------------------------------------------------------------------------------
 # These variables let you give meaningful names to your VMs.
 
-variable "windows_hostnames" {
-  description = "Custom hostnames for Windows VMs (optional)"
+variable "blue_windows_hostnames" {
+  description = "Custom hostnames for Blue Team Windows VMs (optional)"
   type        = list(string)
   default     = ["dc01"]
-
-  # LIST VARIABLE EXPLAINED:
-  # - list(string) means a list of text values
-  # - Syntax: ["first", "second", "third"]
-  #
-  # HOW IT WORKS:
-  # - If you provide names, VMs use those names
-  # - If the list is shorter than windows_count, remaining VMs get auto-names
-  # - Auto-names follow pattern: cdt-win-1, cdt-win-2, etc.
-  #
-  # EXAMPLE:
-  # windows_count = 3
-  # windows_hostnames = ["dc01", "fileserver"]
-  # Result: dc01, fileserver, cdt-win-3
-  #
-  # FOR YOUR COMPETITION:
-  # Use descriptive names that match your scenario:
-  # ["dc01", "exchange", "fileserver", "webserver"]
 }
 
-variable "debian_hostnames" {
-  description = "Custom hostnames for Linux VMs (optional)"
+variable "blue_linux_hostnames" {
+  description = "Custom hostnames for Blue Team Linux VMs (optional)"
   type        = list(string)
   default     = ["webserver"]
-
-  # EXAMPLE FOR COMPETITION:
-  # debian_hostnames = ["web01", "db01", "mail01", "jumphost", "ansible"]
-  #
-  # NAMING CONVENTIONS:
-  # - Use lowercase (Linux is case-sensitive)
-  # - Avoid spaces and special characters
-  # - Keep names short but descriptive
-  # - Consider including the role: web01, db01, app01
 }
 
 # ------------------------------------------------------------------------------
