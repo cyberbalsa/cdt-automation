@@ -17,8 +17,10 @@
 # but can be customized by setting variables in group_vars/scoring.yml
 #
 # DOCUMENTATION:
-# - Ansible Variable Precedence: https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_variables.html#variable-precedence-where-should-i-put-a-variable
-# - Ansible Roles: https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_reuse_roles.html
+# - Ansible Variable Precedence: https://docs.ansible.com/ansible/latest/
+#   playbook_guide/playbooks_variables.html#variable-precedence-where-should-i-put-a-variable
+# - Ansible Roles: https://docs.ansible.com/ansible/latest/
+#   playbook_guide/playbooks_reuse_roles.html
 # ==============================================================================
 
 # ------------------------------------------------------------------------------
