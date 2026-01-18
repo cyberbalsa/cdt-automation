@@ -235,6 +235,30 @@ variable "debian_hostnames" {
   # - Consider including the role: web01, db01, app01
 }
 
+# ------------------------------------------------------------------------------
+# PROJECT CONFIGURATION (Multi-Project Grey Team)
+# ------------------------------------------------------------------------------
+# These variables specify which OpenStack projects to deploy resources to.
+# Requires credentials with access to all three projects.
+
+variable "main_project_id" {
+  description = "OpenStack project ID for main/scoring infrastructure (e.g., cdtalpha)"
+  type        = string
+  default     = "04846fb2e027424d8898953062787b16"
+}
+
+variable "blue_project_id" {
+  description = "OpenStack project ID for Blue Team (e.g., cdtalpha-cdtbravo)"
+  type        = string
+  default     = "d25474b0db314855b36e659c777893c1"
+}
+
+variable "red_project_id" {
+  description = "OpenStack project ID for Red Team (e.g., cdtalpha-cdtcharlie)"
+  type        = string
+  default     = "4cba761707eb4606a750fb7b3de3948d"
+}
+
 # ==============================================================================
 # ADDING NEW VARIABLES
 # ==============================================================================
