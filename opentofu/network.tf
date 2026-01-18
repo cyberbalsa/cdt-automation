@@ -30,6 +30,13 @@
 # Documentation: https://registry.terraform.io/providers/terraform-provider-openstack/openstack/latest/docs/resources/networking_network_v2
 
 resource "openstack_networking_network_v2" "cdt_net" {
+  provider = openstack.main
+  # PROVIDER EXPLAINED:
+  # In a multi-project setup (like a CTF with separate Blue/Red teams),
+  # we need to specify WHICH OpenStack project owns each resource.
+  # "openstack.main" refers to the provider alias defined in main.tf
+  # This network lives in the main/scoring project and is shared with others.
+
   name = var.network_name
   # var.network_name references the variable defined in variables.tf
   # This lets you change the name without editing this file
@@ -54,6 +61,9 @@ resource "openstack_networking_network_v2" "cdt_net" {
 # Documentation: https://registry.terraform.io/providers/terraform-provider-openstack/openstack/latest/docs/resources/networking_subnet_v2
 
 resource "openstack_networking_subnet_v2" "cdt_subnet" {
+  provider = openstack.main
+  # Subnet must be in the same project as its parent network
+
   name       = "${var.network_name}-subnet"
   # ${...} is string interpolation - inserts variable value into string
   # Result: "cdt-net-subnet"
@@ -96,6 +106,9 @@ resource "openstack_networking_subnet_v2" "cdt_subnet" {
 # Documentation: https://registry.terraform.io/providers/terraform-provider-openstack/openstack/latest/docs/resources/networking_router_v2
 
 resource "openstack_networking_router_v2" "cdt_router" {
+  provider = openstack.main
+  # Router lives in the main project, provides internet for all teams
+
   name                = var.router_name
   external_network_id = data.openstack_networking_network_v2.ext_net.id
   # Points to the external network for internet access
@@ -118,6 +131,9 @@ resource "openstack_networking_router_v2" "cdt_router" {
 # Documentation: https://registry.terraform.io/providers/terraform-provider-openstack/openstack/latest/docs/resources/networking_router_interface_v2
 
 resource "openstack_networking_router_interface_v2" "cdt_router_interface" {
+  provider = openstack.main
+  # Interface connects router to subnet, both in main project
+
   router_id = openstack_networking_router_v2.cdt_router.id
   subnet_id = openstack_networking_subnet_v2.cdt_subnet.id
 
@@ -164,17 +180,105 @@ data "openstack_networking_network_v2" "ext_net" {
 # which allows external access through the jump host.
 #
 # ==============================================================================
+# RBAC POLICIES - SHARE NETWORK WITH BLUE AND RED TEAMS
+# ==============================================================================
+# WHAT IS RBAC (Role-Based Access Control)?
+# In OpenStack, each "project" (tenant) is isolated by default. Resources in
+# one project can't see or use resources in another project. This is great
+# for security but problematic for a CTF where we want:
+#
+#   - Main project: Owns the network, runs scoring infrastructure
+#   - Blue project: Blue team VMs that defenders manage
+#   - Red project: Red team attack VMs
+#
+# All these VMs need to be on the SAME network so they can communicate,
+# but they live in different projects for access control and quota management.
+#
+# RBAC policies solve this by explicitly granting access to specific resources
+# across project boundaries. We share the network (not the VMs) so all teams'
+# VMs can attach to it.
+#
+# WHY USE SEPARATE PROJECTS FOR A CTF?
+# 1. Quota isolation: Red team can't accidentally (or intentionally) consume
+#    all resources meant for Blue team
+# 2. Access control: Blue team can't see Red team's VMs in the dashboard
+# 3. Billing/tracking: Easy to see resource usage per team
+# 4. Realistic simulation: Mirrors real-world multi-tenant environments
+#
+# Documentation: https://registry.terraform.io/providers/terraform-provider-openstack/openstack/latest/docs/resources/networking_rbac_policy_v2
+# OpenStack docs: https://docs.openstack.org/neutron/latest/admin/config-rbac.html
+
+resource "openstack_networking_rbac_policy_v2" "share_with_blue" {
+  provider = openstack.main
+  # RBAC policy is created in the project that OWNS the network (main)
+
+  action = "access_as_shared"
+  # "access_as_shared" allows the target project to use this network
+  # VMs in the Blue project can now attach to this network
+
+  object_id   = openstack_networking_network_v2.cdt_net.id
+  object_type = "network"
+  # What we're sharing: the cdt_net network
+
+  target_tenant = var.blue_project_id
+  # WHO we're sharing with: the Blue Team project
+  # "tenant" is the old OpenStack term for "project"
+}
+
+resource "openstack_networking_rbac_policy_v2" "share_with_red" {
+  provider = openstack.main
+
+  action      = "access_as_shared"
+  object_id   = openstack_networking_network_v2.cdt_net.id
+  object_type = "network"
+
+  target_tenant = var.red_project_id
+  # Share with Red Team - their Kali VMs can now attack Blue Team VMs
+  # on the same network, just like in a real attack scenario!
+}
+
+# ==============================================================================
+# CTF NETWORK ARCHITECTURE
+# ==============================================================================
+#
+#                         INTERNET
+#                             |
+#                        [MAIN-NAT]
+#                             |
+#                       [cdt_router]
+#                             |
+#           +-----------------+-----------------+
+#           |                 |                 |
+#      MAIN PROJECT     BLUE PROJECT      RED PROJECT
+#      (owns network)   (shared access)   (shared access)
+#           |                 |                 |
+#      [Scoring VM]     [Windows DC]      [Kali VM 1]
+#      10.10.10.11      10.10.10.21       10.10.10.41
+#                       [Windows VM]      [Kali VM 2]
+#                       10.10.10.22       10.10.10.42
+#                       [Linux VM]
+#                       10.10.10.31
+#
+# All VMs share the same 10.10.10.0/24 network via RBAC sharing.
+# Red can attack Blue. Scoring can monitor both. Nobody can see each
+# other's VMs in the OpenStack dashboard - only network traffic.
+#
+# ==============================================================================
+
+# ==============================================================================
 # ADDING MORE NETWORKS FOR YOUR COMPETITION
 # ==============================================================================
-# For a CCDC-style competition, you need multiple network segments:
+# For a CCDC-style competition, you might want multiple network segments:
 #
-# EXAMPLE: Adding a DMZ network
+# EXAMPLE: Adding a DMZ network for public-facing services
 #
 # resource "openstack_networking_network_v2" "dmz_net" {
-#   name = "competition-dmz"
+#   provider = openstack.main
+#   name     = "competition-dmz"
 # }
 #
 # resource "openstack_networking_subnet_v2" "dmz_subnet" {
+#   provider   = openstack.main
 #   name       = "dmz-subnet"
 #   network_id = openstack_networking_network_v2.dmz_net.id
 #   cidr       = "192.168.10.0/24"
@@ -182,9 +286,19 @@ data "openstack_networking_network_v2" "ext_net" {
 # }
 #
 # resource "openstack_networking_router_interface_v2" "dmz_interface" {
+#   provider  = openstack.main
 #   router_id = openstack_networking_router_v2.cdt_router.id
 #   subnet_id = openstack_networking_subnet_v2.dmz_subnet.id
 # }
 #
-# Then update instances.tf to put some VMs on this new network.
+# # Don't forget to share the new network with Blue/Red!
+# resource "openstack_networking_rbac_policy_v2" "dmz_share_blue" {
+#   provider      = openstack.main
+#   action        = "access_as_shared"
+#   object_id     = openstack_networking_network_v2.dmz_net.id
+#   object_type   = "network"
+#   target_tenant = var.blue_project_id
+# }
+#
+# Then update instances.tf to put web servers on the DMZ network.
 # ==============================================================================
