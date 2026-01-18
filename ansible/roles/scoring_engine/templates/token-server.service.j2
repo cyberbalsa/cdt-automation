@@ -1,0 +1,119 @@
+# {{ ansible_managed }}
+# ==============================================================================
+# RED TEAM TOKEN SERVER - SYSTEMD SERVICE FILE
+# ==============================================================================
+#
+# WHAT IS SYSTEMD?
+# Systemd is the init system used by most modern Linux distributions (Ubuntu,
+# Debian, CentOS, etc.). It manages services - programs that run in the
+# background. Think of it like Windows Services or macOS Launch Daemons.
+#
+# Common systemd commands:
+#   systemctl start red-token-server    # Start the service
+#   systemctl stop red-token-server     # Stop the service
+#   systemctl restart red-token-server  # Restart (stop + start)
+#   systemctl status red-token-server   # Check if running
+#   systemctl enable red-token-server   # Start automatically on boot
+#   journalctl -u red-token-server      # View logs
+#
+# WHAT IS A .j2 FILE?
+# This is a Jinja2 template. Jinja2 is a templating language used by Ansible.
+# Things inside {{ }} get replaced with variable values when Ansible runs.
+# For example, {{ scoring_install_dir }} might become "/opt/scoring-engine"
+#
+# WHY USE TEMPLATES?
+# Instead of hardcoding paths and settings, we use variables. This makes the
+# configuration flexible - the same template works for different environments
+# just by changing variable values in Ansible.
+#
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# [Unit] SECTION - Service metadata and dependencies
+# ------------------------------------------------------------------------------
+# This section describes the service and when it should start.
+
+[Unit]
+# Human-readable description (shown in systemctl status)
+Description=Red Team Token Server
+
+# Link to documentation (the script itself has detailed comments)
+Documentation=file://{{ scoring_install_dir }}/token_server.py
+
+# DEPENDENCIES: What must be running before this service starts?
+# After= means "start this service AFTER the listed units"
+#
+# network.target = basic networking is available
+# This ensures we can actually bind to a network port
+After=network.target
+
+# Start after the main scoring engine so the token file exists
+# {{ scoring_service_name }} gets replaced with the actual service name
+# (e.g., "dwayne-inator.service")
+After={{ scoring_service_name }}.service
+
+# ------------------------------------------------------------------------------
+# [Service] SECTION - How to run the service
+# ------------------------------------------------------------------------------
+# This section defines the actual process that runs.
+
+[Service]
+# Type=simple means the process started by ExecStart IS the service
+# (as opposed to Type=forking where the process forks into background)
+Type=simple
+
+# Which user runs this service (security: don't run as root if possible)
+# {{ scoring_service_user }} is typically "root" but could be a dedicated user
+User={{ scoring_service_user }}
+
+# Working directory - where the service runs from
+# Useful for relative paths in the application
+WorkingDirectory={{ scoring_install_dir }}
+
+# THE ACTUAL COMMAND TO RUN
+# /usr/bin/python3 = full path to Python interpreter (always use full paths!)
+# {{ scoring_install_dir }}/token_server.py = our script
+# {{ scoring_red_token_port }} = port number (default: 8081)
+ExecStart=/usr/bin/python3 {{ scoring_install_dir }}/token_server.py {{ scoring_red_token_port }}
+
+# RESTART POLICY
+# Restart=always means if the process crashes, systemd restarts it
+# This keeps the token server running even if something goes wrong
+Restart=always
+
+# Wait 5 seconds between restart attempts (prevents rapid restart loops)
+RestartSec=5
+
+# ------------------------------------------------------------------------------
+# SECURITY HARDENING
+# ------------------------------------------------------------------------------
+# These options restrict what the service can do, following the principle of
+# least privilege. Even if an attacker exploits the token server, these
+# limits reduce what damage they can cause.
+
+# NoNewPrivileges: Process cannot gain additional privileges (like via sudo)
+# Even if there's a vulnerability, attackers can't escalate to root
+NoNewPrivileges=true
+
+# ProtectSystem=strict: Entire filesystem is read-only EXCEPT paths listed
+# in ReadWritePaths. This prevents malicious writes to system files.
+ProtectSystem=strict
+
+# ProtectHome=true: Cannot access /home, /root, or /run/user directories
+# The token server has no business reading user home directories
+ProtectHome=true
+
+# ReadWritePaths: Exceptions to ProtectSystem - directories this service
+# CAN write to. We need write access to the install dir for logs/state.
+ReadWritePaths={{ scoring_install_dir }}
+
+# ------------------------------------------------------------------------------
+# [Install] SECTION - How to enable/disable the service
+# ------------------------------------------------------------------------------
+# This section is used by 'systemctl enable' and 'systemctl disable'
+
+[Install]
+# WantedBy: Which "target" (run level) should start this service?
+# multi-user.target = normal multi-user mode (like traditional runlevel 3)
+# This means the service starts when the system boots to multi-user mode.
+WantedBy=multi-user.target
