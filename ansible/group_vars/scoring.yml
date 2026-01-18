@@ -233,6 +233,15 @@ scoring_boxes:
             domain: "dc01.CDT.local"     # The name to look up
             answer: ["10.10.10.21"]      # Expected IP address(es)
 
+      # Flag check - validates Red Team flags via SMB
+      - type: smb
+        display: "flag"
+        credlists: ["admins"]
+        share: "C$"
+        files:
+          - name: "Users\\Public\\flag.txt"
+            regex: "{{ red_team_token }}"
+
   # --------------------------------------------------------------------------
   # WINDOWS MEMBER SERVER (blue-win-2)
   # --------------------------------------------------------------------------
