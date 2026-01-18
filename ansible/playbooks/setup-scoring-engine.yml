@@ -1,0 +1,54 @@
+---
+# ==============================================================================
+# SETUP SCORING ENGINE PLAYBOOK
+# ==============================================================================
+# Deploys DWAYNE-INATOR-5000 scoring engine to Grey Team scoring servers.
+#
+# Usage:
+#   ansible-playbook playbooks/setup-scoring-engine.yml
+#
+# After deployment:
+#   - Access web interface at http://<scoring-ip>:8080
+#   - Login as admin to unpause competition
+#   - View logs: journalctl -fu dwayne-inator
+#
+# DOCUMENTATION:
+# - DWAYNE-INATOR-5000: https://github.com/DSU-DefSec/DWAYNE-INATOR-5000
+
+- name: Setup DWAYNE-INATOR-5000 Scoring Engine
+  hosts: scoring
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: Verify we have scoring configuration
+      ansible.builtin.assert:
+        that:
+          - scoring_admins is defined
+          - scoring_admins | length > 0
+          - scoring_teams is defined
+          - scoring_teams | length > 0
+          - scoring_boxes is defined
+        fail_msg: "Scoring configuration missing. Check group_vars/scoring.yml"
+        success_msg: "Scoring configuration validated"
+
+  roles:
+    - scoring_engine
+
+  post_tasks:
+    - name: Display access information
+      ansible.builtin.debug:
+        msg:
+          - "=============================================="
+          - "SCORING ENGINE DEPLOYED SUCCESSFULLY"
+          - "=============================================="
+          - "Web Interface: http://{{ ansible_host }}:{{ scoring_port }}"
+          - "Admin User: {{ scoring_admins[0].name }}"
+          - "Competition Status: {{ 'PAUSED' if scoring_start_paused else 'RUNNING' }}"
+          - ""
+          - "Useful commands:"
+          - "  View logs:    journalctl -fu dwayne-inator"
+          - "  Stop:         systemctl stop dwayne-inator"
+          - "  Start:        systemctl start dwayne-inator"
+          - "  Status:       systemctl status dwayne-inator"
+          - "=============================================="

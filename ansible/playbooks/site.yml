@@ -162,6 +162,15 @@
   tags: ['rdp', 'xrdp', 'linux', 'remote_access']
 
 # ==============================================================================
+# STEP 6: SETUP SCORING ENGINE (Grey Team)
+# ==============================================================================
+# Deploy the DWAYNE-INATOR-5000 scoring engine for attack/defend competitions
+
+- name: Setup Scoring Engine
+  import_playbook: setup-scoring-engine.yml
+  tags: ['scoring', 'grey_team']
+
+# ==============================================================================
 # FINAL STEP: DEPLOYMENT SUMMARY
 # ==============================================================================
 
