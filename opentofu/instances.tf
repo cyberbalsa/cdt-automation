@@ -247,8 +247,9 @@ resource "openstack_compute_instance_v2" "red_kali" {
     delete_on_termination = true
   }
 
-  user_data = file("${path.module}/debian-userdata.yaml")
-  # Kali uses the same cloud-init as other Linux VMs
+  user_data = file("${path.module}/kali-userdata.sh")
+  # Kali uses a bash script for more robust package installation
+  # Installs xRDP with XFCE desktop for GUI access
 
   depends_on = [
     openstack_networking_rbac_policy_v2.share_with_red
