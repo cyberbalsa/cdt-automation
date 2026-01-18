@@ -1,0 +1,280 @@
+---
+# ==============================================================================
+# SCORING ENGINE CONFIGURATION
+# ==============================================================================
+# This file configures the DWAYNE-INATOR-5000 scoring engine for your competition.
+#
+# WHAT IS A SCORING ENGINE?
+# In Capture The Flag (CTF) and Collegiate Cyber Defense Competition (CCDC)
+# style events, a scoring engine automatically checks if services (like websites,
+# email servers, etc.) are running correctly. Teams earn points when their
+# services are up and working, and lose points when services go down.
+#
+# COMPETITION ROLES:
+# - Grey Team: Runs the competition infrastructure (that's you!)
+# - Blue Team: Defenders who keep services running and secure
+# - Red Team: Attackers who try to break into Blue Team systems
+#
+# HOW TO USE THIS FILE:
+# 1. Edit the settings below to match your competition
+# 2. Run: ansible-playbook playbooks/setup-scoring-engine.yml
+# 3. Access the web scoreboard at http://<scoring-server-ip>:8080
+#
+# ANSIBLE VARIABLES EXPLAINED:
+# Variables defined here (like scoring_event_name) are automatically
+# available in playbooks and templates. Ansible loads all .yml files
+# from group_vars/ based on which hosts are being configured.
+#
+# DOCUMENTATION:
+# - Ansible Variables: https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_variables.html
+# - DWAYNE-INATOR-5000: https://github.com/DSU-DefSec/DWAYNE-INATOR-5000
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# EVENT SETTINGS
+# ------------------------------------------------------------------------------
+# Basic information about your competition.
+
+# The name shown on the scoreboard
+scoring_event_name: "CDT Attack/Defend Competition"
+
+# Timezone for timestamps on the scoreboard
+# Find yours at: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+scoring_timezone: "America/New_York"
+
+# Start with scoring paused? (true = paused, false = running immediately)
+# TIP: Set to true so you can verify everything works before starting the clock
+scoring_start_paused: true
+
+# Show detailed information to competitors on the scoreboard
+scoring_verbose: true
+
+# Web interface port (default: 8080)
+# Access scoreboard at: http://<server-ip>:8080
+scoring_port: 8080
+
+# ------------------------------------------------------------------------------
+# TIMING SETTINGS
+# ------------------------------------------------------------------------------
+# Control how often services are checked and how points are calculated.
+#
+# EXAMPLE SCENARIO:
+# With delay=60 and timeout=10, the engine checks each service every ~60 seconds.
+# If a service doesn't respond within 10 seconds, that check fails.
+# After 5 failed checks (sla_threshold), the team gets an SLA violation penalty.
+
+# Seconds between service checks (how often to test each service)
+scoring_delay: 60
+
+# Random variation added to delay (prevents predictable check timing)
+# This stops teams from "gaming" the system by only having services up during checks
+scoring_jitter: 5
+
+# How long to wait for a service to respond before marking it as down
+scoring_timeout: 10
+
+# Points awarded for each successful service check
+scoring_service_points: 10
+
+# SLA = Service Level Agreement
+# How many consecutive failed checks before triggering an SLA violation
+# Think of it like "three strikes and you're out" but for service uptime
+scoring_sla_threshold: 5
+
+# Penalty points deducted for an SLA violation
+scoring_sla_points: 10
+
+# ------------------------------------------------------------------------------
+# ADMIN ACCOUNTS
+# ------------------------------------------------------------------------------
+# Admin users can:
+# - View all team scores and detailed logs
+# - Start/pause/reset the competition
+# - Grade inject submissions (manual challenges)
+#
+# SECURITY NOTE: Change these passwords for real competitions!
+# These are just defaults for lab/training use.
+
+scoring_admins:
+  - name: admin
+    password: "ScoringAdmin123!"
+
+# ------------------------------------------------------------------------------
+# TEAMS
+# ------------------------------------------------------------------------------
+# Define the teams competing in your event.
+#
+# SINGLE TEAM MODE (this config):
+# One Blue Team defends all the boxes. Good for training and practice.
+#
+# MULTI-TEAM MODE (advanced):
+# Multiple Blue Teams each defend their own copy of the infrastructure.
+# Requires separate network ranges per team (e.g., Team1: 10.10.1.x, Team2: 10.10.2.x)
+#
+# The 'id' field identifies the team. In multi-team setups, this replaces
+# the 'x' in IP addresses (e.g., 10.10.x.21 becomes 10.10.1.21 for team "1")
+
+scoring_teams:
+  - id: "1"
+    password: "BlueTeam123!"   # Teams use this to log in and change service passwords
+
+# ------------------------------------------------------------------------------
+# CREDENTIAL LISTS
+# ------------------------------------------------------------------------------
+# Define username/password combinations that the scoring engine uses to
+# test services. These simulate real users trying to access services.
+#
+# WHY CREDENTIAL LISTS?
+# The scoring engine needs to log into services (SSH, Windows, databases)
+# to verify they're working. These credentials must match what's actually
+# configured on the target systems.
+#
+# IMPORTANT FOR BLUE TEAMS:
+# - Teams CAN change passwords during competition (to lock out attackers)
+# - Teams CANNOT add new users or change usernames
+# - When a team changes a password, they update it in the scoring web interface
+#
+# MULTIPLE LISTS:
+# Different services may use different accounts. For example:
+# - "domain_users" for regular user logins
+# - "admins" for administrative access
+# - "linux_users" for Linux-specific accounts
+
+scoring_credlists:
+  # Regular domain users (these are created by the create-domain-users.yml playbook)
+  - name: "domain_users"
+    usernames:
+      - jdoe
+      - asmith
+      - bwilson
+      - mjohnson
+      - dlee
+    default_password: "UserPass123!"
+
+  # Windows Administrator account
+  - name: "admins"
+    usernames:
+      - Administrator
+    default_password: "Cyberrange123!"
+
+  # Linux local user account (created by cloud-init during VM deployment)
+  - name: "linux_users"
+    usernames:
+      - cyberrange
+    default_password: "Cyberrange123!"
+
+# ------------------------------------------------------------------------------
+# BOX DEFINITIONS WITH CHECKS
+# ------------------------------------------------------------------------------
+# A "box" is a server/computer that the scoring engine monitors.
+# Each box has one or more "checks" that test if specific services are working.
+#
+# SUPPORTED CHECK TYPES:
+# - ping:  Can we reach the server? (ICMP)
+# - ssh:   Can we log into Linux via SSH?
+# - winrm: Can we remotely manage Windows? (Windows Remote Management)
+# - rdp:   Is Remote Desktop available?
+# - smb:   Can we access Windows file shares?
+# - dns:   Does the DNS server resolve names correctly?
+# - web:   Is the website responding?
+# - ftp:   Can we access FTP file transfers?
+# - sql:   Can we query the database?
+# - ldap:  Can we query the directory service?
+# - smtp:  Can we send email?
+# - imap:  Can we receive email?
+# - tcp:   Is a specific port open?
+# - vnc:   Is VNC remote desktop available?
+#
+# ANATOMY OF A CHECK:
+#   - type: ssh                    # What kind of service to test
+#     credlists: ["linux_users"]   # Which credentials to use (defined above)
+#     port: 22                     # Optional: non-standard port
+#
+# DOCUMENTATION:
+# - Full check options: https://github.com/DSU-DefSec/DWAYNE-INATOR-5000#configuration
+
+scoring_boxes:
+  # --------------------------------------------------------------------------
+  # DOMAIN CONTROLLER (dc01)
+  # --------------------------------------------------------------------------
+  # The Domain Controller is the "brain" of a Windows network. It handles:
+  # - User authentication (Active Directory)
+  # - DNS (translating names like "dc01.CDT.local" to IP addresses)
+  # - Group policies and permissions
+  #
+  # If the DC goes down, users can't log in and the whole network suffers.
+  # This makes it a high-value target for attackers AND a critical service
+  # for defenders to protect.
+  - name: "dc01"
+    ip: "10.10.10.21"
+    checks:
+      # Basic connectivity - can we reach the server at all?
+      - type: ping
+
+      # Windows Remote Management - can we run commands remotely?
+      # Used by administrators (and attackers!) to manage Windows servers
+      - type: winrm
+        credlists: ["admins"]
+
+      # Remote Desktop Protocol - can users connect with a graphical interface?
+      - type: rdp
+
+      # Server Message Block - Windows file sharing
+      # Tests if shared folders are accessible
+      - type: smb
+        credlists: ["admins"]
+
+      # Domain Name System - does name resolution work?
+      # This check asks "what is the IP address of dc01.CDT.local?"
+      # and verifies the answer is correct
+      - type: dns
+        records:
+          - kind: "A"                    # A = Address record (name -> IP)
+            domain: "dc01.CDT.local"     # The name to look up
+            answer: ["10.10.10.21"]      # Expected IP address(es)
+
+  # --------------------------------------------------------------------------
+  # WINDOWS MEMBER SERVER (blue-win-2)
+  # --------------------------------------------------------------------------
+  # A "member server" is a Windows server that's joined to the domain
+  # but isn't a Domain Controller. It might run applications, databases,
+  # file shares, or other services.
+  - name: "blue-win-2"
+    ip: "10.10.10.22"
+    checks:
+      - type: ping
+      - type: winrm
+        credlists: ["admins"]
+      - type: rdp
+
+  # --------------------------------------------------------------------------
+  # LINUX WEB SERVER (webserver)
+  # --------------------------------------------------------------------------
+  # This Linux server hosts a website. Web servers are common targets
+  # because they're exposed to the network and often have vulnerabilities.
+  - name: "webserver"
+    ip: "10.10.10.31"
+    checks:
+      - type: ping
+
+      # Secure Shell - remote command-line access to Linux
+      - type: ssh
+        credlists: ["linux_users"]
+
+      # Web check - is the website responding?
+      - type: web
+        urls:
+          - path: "/"           # Check the homepage
+            status: 200         # HTTP 200 = "OK" (page loaded successfully)
+
+  # --------------------------------------------------------------------------
+  # ADDITIONAL LINUX SERVER (blue-linux-2)
+  # --------------------------------------------------------------------------
+  # Another Linux server for the Blue Team to defend.
+  # Could host databases, applications, or other services.
+  - name: "blue-linux-2"
+    ip: "10.10.10.32"
+    checks:
+      - type: ping
+      - type: ssh
+        credlists: ["linux_users"]
