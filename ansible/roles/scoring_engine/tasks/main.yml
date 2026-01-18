@@ -2,8 +2,220 @@
 # ==============================================================================
 # SCORING ENGINE ROLE - TASKS
 # ==============================================================================
-# Placeholder - will be implemented in next tasks
+# This file contains all the steps Ansible performs to install and configure
+# the DWAYNE-INATOR-5000 scoring engine.
+#
+# WHAT ARE ANSIBLE TASKS?
+# Tasks are individual actions Ansible performs on target servers. They run
+# in order from top to bottom. Each task uses a "module" (like apt, copy, file)
+# to perform a specific action.
+#
+# TASK STRUCTURE:
+#   - name: Human-readable description (shows in output)
+#     ansible.builtin.module_name:    # Which module to use
+#       parameter1: value1            # Module-specific options
+#       parameter2: value2
+#     register: result_variable       # Save output to a variable (optional)
+#     when: condition                 # Only run if condition is true (optional)
+#     notify: handler_name            # Trigger a handler when task changes something
+#
+# WHAT THIS ROLE DOES (in order):
+# 1. Installs Go programming language and build tools (gcc, git)
+# 2. Creates a directory for the scoring engine
+# 3. Copies the scoring engine source code from this repo to the server
+# 4. Compiles (builds) the Go code into an executable program
+# 5. Generates the configuration file from your settings
+# 6. Sets up a systemd service so it runs automatically
+# 7. Starts the service and verifies it's working
+#
+# DOCUMENTATION:
+# - Ansible Tasks: https://docs.ansible.com/ansible/latest/playbook_guide/playbooks_intro.html
+# - Module Index: https://docs.ansible.com/ansible/latest/collections/index_module.html
+# ==============================================================================
 
-- name: Placeholder task
+# ------------------------------------------------------------------------------
+# STEP 1: Install Build Dependencies
+# ------------------------------------------------------------------------------
+# The scoring engine is written in Go, so we need the Go compiler.
+# It also uses go-sqlite3 which requires gcc (a C compiler) to build.
+
+- name: Install build dependencies
+  ansible.builtin.apt:
+    # APT MODULE: Installs packages on Debian/Ubuntu systems
+    # Similar to running: sudo apt install golang-go gcc git
+    # Docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/apt_module.html
+    name:
+      - golang-go    # Go programming language compiler
+      - gcc          # C compiler (required for go-sqlite3)
+      - git          # Version control (used during Go builds)
+    state: present       # Ensure packages are installed (vs. absent to remove)
+    update_cache: true   # Run 'apt update' first to refresh package lists
+  register: deps_install
+  # REGISTER: Saves the task's output to a variable (deps_install)
+  # We can check deps_install.changed to see if anything was installed
+
+- name: Display Go version
+  ansible.builtin.command: go version
+  # COMMAND MODULE: Runs shell commands
+  # Docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/command_module.html
+  register: go_version
+  changed_when: false
+  # CHANGED_WHEN: Tells Ansible when to consider this task as having "changed" something
+  # 'false' means this task never reports a change (it's just checking, not modifying)
+
+- name: Show Go version
   ansible.builtin.debug:
-    msg: "Scoring engine role tasks will be implemented"
+    # DEBUG MODULE: Prints messages during playbook execution
+    # Useful for showing variable values or status information
+    # Docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/debug_module.html
+    msg: "{{ go_version.stdout }}"
+    # {{ variable }} is Jinja2 syntax - Ansible replaces it with the variable's value
+
+# ------------------------------------------------------------------------------
+# STEP 2: Create Installation Directory
+# ------------------------------------------------------------------------------
+# Create a dedicated directory for the scoring engine files
+
+- name: Create scoring engine directory
+  ansible.builtin.file:
+    # FILE MODULE: Manages files and directories
+    # Docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/file_module.html
+    path: "{{ scoring_install_dir }}"    # Directory path (default: /opt/scoring-engine)
+    state: directory                      # Create a directory (vs. file, link, absent)
+    owner: "{{ scoring_service_user }}"   # Who owns the directory
+    mode: "0755"                          # Permissions: rwxr-xr-x (owner can write, others can read/execute)
+
+# ------------------------------------------------------------------------------
+# STEP 3: Copy Scoring Engine Source
+# ------------------------------------------------------------------------------
+# Copy the scoring engine code from this repository to the target server
+# The source is in the git submodule at scoring/DWAYNE-INATOR-5000/
+
+- name: Copy DWAYNE-INATOR-5000 source
+  ansible.builtin.copy:
+    # COPY MODULE: Copies files from the control machine to target servers
+    # Docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/copy_module.html
+    src: "{{ playbook_dir }}/../../scoring/DWAYNE-INATOR-5000/"
+    # playbook_dir is a magic variable = directory containing the playbook
+    # So this resolves to: ansible/playbooks/../../scoring/DWAYNE-INATOR-5000/
+    # Which simplifies to: scoring/DWAYNE-INATOR-5000/ (at repo root)
+    dest: "{{ scoring_install_dir }}/"
+    owner: "{{ scoring_service_user }}"
+    mode: preserve    # Keep original file permissions
+  register: source_copy
+  # We register this so we can check if files changed and trigger a rebuild
+
+# ------------------------------------------------------------------------------
+# STEP 4: Build Scoring Engine
+# ------------------------------------------------------------------------------
+# Compile the Go source code into an executable binary
+# This is like running: cd /opt/scoring-engine && go build -o dwayne-inator
+
+- name: Build scoring engine binary
+  ansible.builtin.command:
+    cmd: go build {{ scoring_go_build_flags }} -o {{ scoring_binary_name }}
+    chdir: "{{ scoring_install_dir }}"    # Change to this directory before running
+    creates: "{{ scoring_install_dir }}/{{ scoring_binary_name }}"
+    # CREATES: Only run this task if the specified file DOESN'T exist
+    # This makes the task idempotent (safe to run multiple times)
+    # First run: binary doesn't exist -> task runs
+    # Second run: binary exists -> task skips (saves time!)
+  environment:
+    # ENVIRONMENT: Set environment variables for this command
+    # Go uses these to cache downloaded packages and compiled code
+    GOCACHE: "{{ scoring_install_dir }}/.cache/go-build"
+    GOPATH: "{{ scoring_install_dir }}/.cache/go"
+  register: build_result
+
+- name: Rebuild if source changed
+  ansible.builtin.command:
+    cmd: go build {{ scoring_go_build_flags }} -o {{ scoring_binary_name }}
+    chdir: "{{ scoring_install_dir }}"
+  environment:
+    GOCACHE: "{{ scoring_install_dir }}/.cache/go-build"
+    GOPATH: "{{ scoring_install_dir }}/.cache/go"
+  when: source_copy.changed
+  # WHEN: Conditional execution - only run this task if condition is true
+  # source_copy.changed is true if the copy task actually changed files
+  # This ensures we rebuild when the code updates
+  notify: Restart scoring engine
+  # NOTIFY: Trigger the "restart scoring engine" handler
+  # Handler won't run immediately - it runs after all tasks complete
+  changed_when: true
+
+# ------------------------------------------------------------------------------
+# STEP 5: Deploy Configuration
+# ------------------------------------------------------------------------------
+# Generate the dwayne.conf configuration file from our YAML variables
+# The template transforms group_vars/scoring.yml into TOML format
+
+- name: Deploy scoring engine configuration
+  ansible.builtin.template:
+    # TEMPLATE MODULE: Process Jinja2 templates and copy to target
+    # Unlike 'copy', this evaluates {{ variables }} and {% logic %}
+    # Docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/template_module.html
+    src: dwayne.conf.j2          # Template file (in role's templates/ directory)
+    dest: "{{ scoring_install_dir }}/dwayne.conf"
+    owner: "{{ scoring_service_user }}"
+    mode: "0640"    # rw-r----- (owner read/write, group read, others nothing)
+                    # More restrictive because config may contain passwords
+  notify: Restart scoring engine
+
+# ------------------------------------------------------------------------------
+# STEP 6: Deploy Systemd Service
+# ------------------------------------------------------------------------------
+# Create a systemd service so the scoring engine:
+# - Starts automatically when the server boots
+# - Restarts automatically if it crashes
+# - Can be controlled with systemctl commands
+
+- name: Deploy systemd service unit
+  ansible.builtin.template:
+    src: dwayne.service.j2
+    dest: /etc/systemd/system/{{ scoring_service_name }}.service
+    # /etc/systemd/system/ is where custom services go
+    owner: root
+    mode: "0644"
+  notify:
+    # You can notify multiple handlers!
+    - Reload systemd       # Tell systemd to re-read service files
+    - Restart scoring engine
+
+# ------------------------------------------------------------------------------
+# STEP 7: Enable and Start Service
+# ------------------------------------------------------------------------------
+# Enable = start on boot, Started = start right now
+
+- name: Enable and start scoring engine service
+  ansible.builtin.systemd:
+    # SYSTEMD MODULE: Manage systemd services
+    # Docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/systemd_module.html
+    name: "{{ scoring_service_name }}"
+    enabled: true      # Start on boot (like: systemctl enable dwayne-inator)
+    state: started     # Start now (like: systemctl start dwayne-inator)
+    daemon_reload: true  # Reload systemd config first (in case service file changed)
+
+# ------------------------------------------------------------------------------
+# STEP 8: Verify Service is Running
+# ------------------------------------------------------------------------------
+# Make sure the scoring engine actually started and is accepting connections
+
+- name: Wait for scoring engine to start
+  ansible.builtin.wait_for:
+    # WAIT_FOR MODULE: Wait for a condition before continuing
+    # Docs: https://docs.ansible.com/ansible/latest/collections/ansible/builtin/wait_for_module.html
+    port: "{{ scoring_port }}"   # Wait for this port to be open
+    host: 127.0.0.1              # Check localhost (we're on the scoring server)
+    delay: 5                     # Wait 5 seconds before first check
+    timeout: 60                  # Fail if not ready within 60 seconds
+
+- name: Display service status
+  ansible.builtin.command: systemctl status {{ scoring_service_name }}
+  register: service_status
+  changed_when: false
+
+- name: Show service status
+  ansible.builtin.debug:
+    msg: "{{ service_status.stdout_lines }}"
+    # stdout_lines splits the output into a list (one item per line)
+    # This makes it display nicely in Ansible's output
