@@ -74,3 +74,24 @@ scoring_timeout: 10
 scoring_service_points: 10
 scoring_sla_threshold: 5
 scoring_sla_points: 10
+
+# ------------------------------------------------------------------------------
+# FLAG SYSTEM SETTINGS
+# ------------------------------------------------------------------------------
+# Attack/defend flag mechanics - Red team plants flags, Blue team hunts them.
+# Flags only score when the associated service is UP (prevents scorched earth).
+
+# Enable/disable the flag system
+scoring_flags_enabled: false
+
+# Points awarded per valid flag per check interval
+scoring_flag_points: 5
+
+# Check flags every N service rounds (e.g., 5 = every 5 minutes if delay=60)
+scoring_flag_check_interval: 5
+
+# Filename to search for when checking flags
+scoring_flag_filename: "flag.txt"
+
+# Port for Red team token retrieval server
+scoring_red_token_port: 8081
