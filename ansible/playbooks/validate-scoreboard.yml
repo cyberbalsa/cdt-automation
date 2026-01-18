@@ -1,0 +1,128 @@
+---
+# ==============================================================================
+# VALIDATE SCOREBOARD PLAYBOOK
+# ==============================================================================
+# Validates that all services in the DWAYNE-INATOR-5000 scoring engine are
+# reporting as UP (green).
+#
+# This playbook:
+# 1. Copies a Python validation script to the scoring server
+# 2. Runs the script to check all services
+# 3. Optionally waits for services to come online (useful post-deployment)
+#
+# Usage:
+#   # Quick check (fail immediately if any service is down)
+#   ansible-playbook playbooks/validate-scoreboard.yml
+#
+#   # Wait up to 5 minutes for services to come online
+#   ansible-playbook playbooks/validate-scoreboard.yml -e "wait_seconds=300"
+#
+#   # Custom scoring URL (if running on different host)
+#   ansible-playbook playbooks/validate-scoreboard.yml -e "scoring_url=http://100.65.6.20:8080"
+
+- name: Validate Scoring Engine Scoreboard
+  hosts: scoring
+  gather_facts: false
+
+  vars:
+    # Scoring engine URL (override with -e scoring_url=...)
+    scoring_url: "http://localhost:8080"
+
+    # Maximum seconds to wait for all services to be UP (0 = no wait)
+    wait_seconds: 0
+
+    # Seconds between checks when waiting
+    check_interval: 10
+
+    # Path for the validation script on the remote host
+    script_path: "/tmp/validate_scoreboard.py"
+
+  tasks:
+    - name: Display validation parameters
+      ansible.builtin.debug:
+        msg:
+          - "Validating scoreboard at: {{ scoring_url }}"
+          - "Wait timeout: {{ wait_seconds }}s"
+          - "Check interval: {{ check_interval }}s"
+
+    - name: Copy validation script to scoring server
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../files/validate_scoreboard.py"
+        dest: "{{ script_path }}"
+        mode: "0755"
+
+    - name: Run scoreboard validation
+      ansible.builtin.command:
+        cmd: >-
+          python3 {{ script_path }}
+          --url {{ scoring_url }}
+          --wait {{ wait_seconds }}
+          --interval {{ check_interval }}
+          --json
+      register: validation_result
+      changed_when: false
+      failed_when: false
+
+    - name: Parse validation result
+      ansible.builtin.set_fact:
+        scoreboard_status: "{{ validation_result.stdout | from_json }}"
+      when: validation_result.rc in [0, 1]
+
+    - name: Display scoreboard summary
+      ansible.builtin.debug:
+        msg:
+          - "=============================================="
+          - "SCOREBOARD VALIDATION RESULT"
+          - "=============================================="
+          - "Total Services: {{ scoreboard_status.total_services }}"
+          - "UP:   {{ scoreboard_status.up_count }}"
+          - "DOWN: {{ scoreboard_status.down_count }}"
+          - ""
+          - "Status: {{ 'ALL PASSING' if scoreboard_status.success else 'SERVICES FAILING' }}"
+          - "=============================================="
+      when: scoreboard_status is defined
+
+    - name: List failing services
+      ansible.builtin.debug:
+        msg: "FAILING: {{ item.name }}"
+      loop: "{{ scoreboard_status.services | selectattr('status', 'equalto', 'down') | list }}"
+      when:
+        - scoreboard_status is defined
+        - scoreboard_status.down_count > 0
+
+    - name: Display connection error
+      ansible.builtin.debug:
+        msg:
+          - "ERROR: Could not connect to scoring engine"
+          - "URL: {{ scoring_url }}"
+          - "Details: {{ validation_result.stderr | default('Unknown error') }}"
+      when: validation_result.rc == 2
+
+    - name: Fail if services are down
+      ansible.builtin.fail:
+        msg: >-
+          Scoreboard validation failed: {{ scoreboard_status.down_count }} service(s) DOWN
+          ({{ scoreboard_status.up_count }}/{{ scoreboard_status.total_services }} passing)
+      when:
+        - scoreboard_status is defined
+        - not scoreboard_status.success
+
+    - name: Fail if connection error
+      ansible.builtin.fail:
+        msg: "Could not connect to scoring engine at {{ scoring_url }}"
+      when: validation_result.rc == 2
+
+    - name: Validation passed
+      ansible.builtin.debug:
+        msg:
+          - "SUCCESS: All {{ scoreboard_status.total_services }} services are UP!"
+          - ""
+          - "Scoreboard URL: {{ scoring_url }}/scoreboard"
+      when:
+        - scoreboard_status is defined
+        - scoreboard_status.success
+
+    - name: Clean up validation script
+      ansible.builtin.file:
+        path: "{{ script_path }}"
+        state: absent

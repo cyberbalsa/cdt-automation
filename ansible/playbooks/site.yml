@@ -171,6 +171,19 @@
   tags: ['scoring', 'grey_team']
 
 # ==============================================================================
+# STEP 7: VALIDATE SCORING ENGINE
+# ==============================================================================
+# Verify all services are reporting as UP in the scoring engine
+# Waits up to 3 minutes for services to come online after deployment
+
+- name: Validate Scoreboard (All Services Green)
+  import_playbook: validate-scoreboard.yml
+  vars:
+    wait_seconds: 180
+    check_interval: 15
+  tags: ['scoring', 'validation', 'grey_team']
+
+# ==============================================================================
 # FINAL STEP: DEPLOYMENT SUMMARY
 # ==============================================================================
 

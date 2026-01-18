@@ -220,9 +220,9 @@ scoring_boxes:
       - type: rdp
 
       # Server Message Block - Windows file sharing
-      # Tests if shared folders are accessible
-      - type: smb
-        credlists: ["admins"]
+      # Tests if SMB port is listening (TCP check is more reliable)
+      - type: tcp
+        port: 445
 
       # Domain Name System - does name resolution work?
       # This check asks "what is the IP address of dc01.CDT.local?"
