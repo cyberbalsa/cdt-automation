@@ -2,6 +2,8 @@
 
 This checklist guides you through building your competition infrastructure. Work through each section in order. Do not skip steps.
 
+For detailed step-by-step instructions, see [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md).
+
 ---
 
 ## Phase 1: Environment Setup
@@ -47,7 +49,21 @@ ssh-keygen -t rsa -b 4096
 
 - [ ] RSA SSH key pair exists at ~/.ssh/id_rsa and ~/.ssh/id_rsa.pub
 
-### 1.3 Configure OpenStack Access
+### 1.3 Record Your Project Names
+
+Your instructor will provide names for three OpenStack projects:
+
+| Project | Name | Purpose |
+|---------|------|---------|
+| Main | ________________ | Grey Team (network, scoring) |
+| Blue | ________________ | Blue Team (Windows, Linux defenders) |
+| Red | ________________ | Red Team (Kali attackers) |
+
+- [ ] Main project name recorded
+- [ ] Blue project name recorded
+- [ ] Red project name recorded
+
+### 1.4 Configure OpenStack Access
 
 1. Go to https://openstack.cyberrange.rit.edu
 2. Log in with your credentials
@@ -60,19 +76,39 @@ ssh-keygen -t rsa -b 4096
 - [ ] SSH public key uploaded to OpenStack
 - [ ] Key name recorded: ________________
 
-### 1.4 Create Application Credentials
+### 1.5 Get Your Project IDs
 
-1. In OpenStack, navigate to Identity, then Application Credentials
-2. Click Create Application Credential
-3. Enter a name (like "grey-team")
-4. Click Create Application Credential
-5. Click Download openrc file
-6. Save the file - the secret is only shown once
+For each of your three projects, find the Project ID:
 
-- [ ] Application credentials created
+1. In OpenStack, click the project dropdown (top left)
+2. Select your main project
+3. Go to Identity, then Projects
+4. Find your project and copy the Project ID
+
+| Project | ID |
+|---------|-----|
+| Main | ________________________________ |
+| Blue | ________________________________ |
+| Red | ________________________________ |
+
+- [ ] Main project ID recorded
+- [ ] Blue project ID recorded
+- [ ] Red project ID recorded
+
+### 1.6 Create Application Credentials
+
+1. In OpenStack, make sure your **main project** is selected
+2. Navigate to Identity, then Application Credentials
+3. Click Create Application Credential
+4. Enter a name (like "grey-team")
+5. Click Create Application Credential
+6. Click Download openrc file
+7. Save the file - the secret is only shown once
+
+- [ ] Application credentials created (in main project)
 - [ ] openrc file downloaded
 
-### 1.5 Set Up This Project
+### 1.7 Set Up This Project
 
 ```bash
 # Clone the repository (if not already done)
@@ -90,13 +126,21 @@ mv ~/Downloads/app-cred-*-openrc.sh .
 - [ ] Credentials file in project directory
 - [ ] quick-start.sh ran successfully
 
-### 1.6 Configure Your SSH Key Name
+### 1.8 Configure Project IDs and SSH Key
 
-Edit `opentofu/variables.tf` and find the keypair_name variable. Change it to match the name you used in OpenStack.
+Edit `opentofu/variables.tf` and update these variables:
 
-- [ ] keypair_name variable updated in variables.tf
+- `keypair_name` - your SSH key name from step 1.4
+- `main_project_id` - your main project ID from step 1.5
+- `blue_project_id` - your blue project ID from step 1.5
+- `red_project_id` - your red project ID from step 1.5
 
-### 1.7 Verify Setup
+- [ ] keypair_name variable updated
+- [ ] main_project_id variable updated
+- [ ] blue_project_id variable updated
+- [ ] red_project_id variable updated
+
+### 1.9 Verify Setup
 
 ```bash
 # Load credentials
@@ -110,17 +154,27 @@ tofu init
 tofu plan
 ```
 
-If `tofu plan` shows resources it would create without errors, your setup is complete.
+If `tofu plan` shows resources it would create without errors, your setup is complete. You should see resources being created in all three projects.
 
 - [ ] `source app-cred-openrc.sh` runs without errors
 - [ ] `tofu init` completes successfully
-- [ ] `tofu plan` shows planned resources without authentication errors
+- [ ] `tofu plan` shows resources in main, blue, and red projects
+- [ ] No authentication or project ID errors
 
 ---
 
 ## Phase 2: Design Your Competition
 
 Complete your design on paper before writing code. Changing your design after building infrastructure wastes time.
+
+**Note:** The template provides base infrastructure:
+- Network with RBAC sharing across three projects
+- Scoring server(s) in main project
+- Windows DC and members in blue project
+- Linux servers in blue project
+- Kali attack boxes in red project
+
+Your design extends this foundation with additional servers, services, and network segments.
 
 ### 2.1 Network Design
 
@@ -208,19 +262,28 @@ Plan your credentials. Document them now so you do not forget:
 
 Now translate your design into OpenTofu configuration.
 
+**Important:** This project uses three OpenStack provider aliases:
+- `openstack.main` - Main/Grey Team project (network, scoring)
+- `openstack.blue` - Blue Team project (defensive servers)
+- `openstack.red` - Red Team project (Kali attack boxes)
+
+When adding resources, specify which project should own them using the `provider` attribute.
+
 ### 3.1 Create Network Resources
 
 Edit `opentofu/network.tf` to add your network segments.
 
-For each network in your design:
+For each network in your design (networks should be in the main project):
 
 ```hcl
 resource "openstack_networking_network_v2" "NETWORK_NAME" {
+  provider       = openstack.main
   name           = "competition-NETWORK_NAME"
   admin_state_up = true
 }
 
 resource "openstack_networking_subnet_v2" "NETWORK_NAME_subnet" {
+  provider        = openstack.main
   name            = "competition-NETWORK_NAME-subnet"
   network_id      = openstack_networking_network_v2.NETWORK_NAME.id
   cidr            = "YOUR.CIDR.HERE/24"
@@ -229,22 +292,42 @@ resource "openstack_networking_subnet_v2" "NETWORK_NAME_subnet" {
 }
 ```
 
-- [ ] DMZ network resource created
+- [ ] DMZ network resource created (with provider = openstack.main)
 - [ ] Internal network resource created
 - [ ] Management network resource created
-- [ ] Red Team network resource created
+- [ ] RBAC policies added to share new networks with blue/red projects
 - [ ] Router/firewall resource created (if using pfSense or similar)
 
 ### 3.2 Create Instance Resources
 
 Edit `opentofu/instances.tf` to add your servers.
 
-For each server type, add a resource block. Use the existing Windows and Debian resources as templates.
+For each server type, add a resource block. Use the existing resources as templates. Specify the correct provider for each team:
 
-- [ ] Scored service servers added (web, mail, database, etc.)
-- [ ] Blue Team workstations added
-- [ ] Red Team workstations added
-- [ ] Management/scoring server added
+```hcl
+# Blue Team servers use openstack.blue
+resource "openstack_compute_instance_v2" "blue_webserver" {
+  provider = openstack.blue
+  # ...
+}
+
+# Red Team servers use openstack.red
+resource "openstack_compute_instance_v2" "red_additional" {
+  provider = openstack.red
+  # ...
+}
+
+# Scoring/Grey Team servers use openstack.main
+resource "openstack_compute_instance_v2" "scoring_additional" {
+  provider = openstack.main
+  # ...
+}
+```
+
+- [ ] Scored service servers added (with provider = openstack.blue)
+- [ ] Additional Blue Team servers added (with provider = openstack.blue)
+- [ ] Additional Red Team servers added (with provider = openstack.red)
+- [ ] Additional scoring servers added (with provider = openstack.main)
 
 ### 3.3 Create Variables
 
@@ -311,24 +394,41 @@ The `import-tofu-to-ansible.py` script must be updated to include your new serve
 Read through `import-tofu-to-ansible.py` to understand how it works:
 
 1. It runs `tofu output -json` to get server information
-2. It parses the JSON to extract hostnames and IPs
+2. It parses the JSON to extract hostnames and IPs organized by team
 3. It writes an Ansible inventory file with groups and variables
 
+The script generates these groups by default:
+
+| Group | Contents |
+|-------|----------|
+| `scoring` | Grey Team scoring servers |
+| `windows_dc` | First Blue Windows server |
+| `blue_windows_members` | Other Blue Windows servers |
+| `blue_linux_members` | Blue Linux servers |
+| `red_team` | Red Team Kali boxes |
+
+Plus hierarchy groups: `windows`, `blue_team`, `linux_members`
+
 - [ ] Script logic understood
+- [ ] Output structure understood
 
 ### 4.2 Add Your Server Types
 
 Edit the script to include inventory groups for your new server types. Follow the patterns used for existing groups.
 
 For each new server type:
-1. Add code to extract IPs from the tofu output
-2. Add a new inventory group section
-3. Add appropriate connection variables
+1. Add output in `outputs.tf` with names and IPs
+2. Add code in the script to extract from the new output
+3. Add a new inventory group section
+4. Add appropriate connection variables
+5. Add to hierarchy groups if needed
 
+- [ ] New outputs added to outputs.tf
 - [ ] DMZ servers added to inventory script
-- [ ] Blue Team workstations added to inventory script
-- [ ] Red Team workstations added to inventory script
+- [ ] Additional Blue Team servers added to inventory script
+- [ ] Additional Red Team servers added to inventory script
 - [ ] Any other server types added
+- [ ] Hierarchy groups updated if needed
 
 ### 4.3 Test Inventory Generation
 
@@ -339,7 +439,8 @@ cat ansible/inventory/production.ini
 
 Verify the inventory file contains:
 - [ ] All servers with correct IPs
-- [ ] Servers in correct groups
+- [ ] Servers in correct team groups
+- [ ] Servers in correct hierarchy groups
 - [ ] Connection variables for each group
 
 ---
@@ -381,8 +482,20 @@ For each role, create a playbook in `ansible/playbooks/`:
     - your_role_name
 ```
 
+Use the appropriate team groups:
+- `blue_team` - All Blue Team servers
+- `blue_linux_members` - Blue Linux only
+- `blue_windows_members` - Blue Windows (except DC)
+- `windows_dc` - Domain Controller only
+- `red_team` - Red Team Kali boxes
+- `scoring` - Grey Team scoring servers
+- `linux_members` - All Linux servers
+
+**Note:** Red Team Kali boxes should NOT run domain-related playbooks since they do not join the domain.
+
 - [ ] Playbook created for each service
-- [ ] Playbooks use correct host groups
+- [ ] Playbooks use correct team/host groups
+- [ ] Red Team playbooks do not include domain tasks
 
 ### 5.4 Update site.yml
 

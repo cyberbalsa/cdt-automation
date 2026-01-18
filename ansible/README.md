@@ -9,24 +9,34 @@ This directory contains Ansible automation for configuring servers. This documen
 1. [What This Configuration Does](#what-this-configuration-does)
 2. [Directory Structure](#directory-structure)
 3. [How Ansible Works](#how-ansible-works)
-4. [Running Playbooks](#running-playbooks)
-5. [Understanding the Existing Configuration](#understanding-the-existing-configuration)
-6. [Adding New Services](#adding-new-services)
-7. [Creating Roles](#creating-roles)
-8. [Working with Variables](#working-with-variables)
-9. [Debugging Problems](#debugging-problems)
+4. [Inventory Groups Explained](#inventory-groups-explained)
+5. [Running Playbooks](#running-playbooks)
+6. [Understanding the Existing Configuration](#understanding-the-existing-configuration)
+7. [Adding New Services](#adding-new-services)
+8. [Creating Roles](#creating-roles)
+9. [Working with Variables](#working-with-variables)
+10. [Debugging Problems](#debugging-problems)
 
 ---
 
 ## What This Configuration Does
 
-This Ansible configuration sets up a Windows Active Directory domain environment:
+This Ansible configuration sets up infrastructure across three teams:
 
-1. Promotes the first Windows server to a Domain Controller
-2. Joins remaining Windows servers to the domain
-3. Joins Linux servers to the domain (using SSSD and Kerberos)
-4. Creates domain user accounts
-5. Configures remote desktop access on all servers
+**Blue Team (Defenders):**
+- Promotes the first Windows server to an Active Directory Domain Controller
+- Joins remaining Windows servers to the domain
+- Joins Linux servers to the domain (using SSSD and Kerberos)
+- Creates domain user accounts
+- Configures remote desktop access (RDP on Windows, xRDP on Linux)
+
+**Red Team (Attackers):**
+- Configures xRDP for graphical desktop access to Kali boxes
+- Kali boxes do NOT join the domain (they are attack machines)
+
+**Grey Team (Scoring):**
+- Scoring servers can be configured as needed for your competition
+- The base configuration sets up xRDP for desktop access
 
 This is a foundation. Your competition will need additional configuration for web servers, databases, mail servers, scoring systems, and other services.
 
@@ -53,6 +63,7 @@ ansible/
     create-domain-users.yml
     join-windows-domain.yml
     join-linux-domain.yml
+    activate-windows-kms.yml
     setup-rdp-windows.yml
     setup-rdp-linux.yml
 
@@ -66,7 +77,7 @@ ansible/
 
 **ansible.cfg**: Contains settings that control how Ansible connects to servers. The important settings are the SSH jump host and WinRM proxy configuration. You generally do not need to change this.
 
-**inventory/production.ini**: Lists all servers with their IP addresses and connection details. This file is generated automatically by `import-tofu-to-ansible.py`. Do not edit it manually - your changes will be overwritten.
+**inventory/production.ini**: Lists all servers organized by team with their IP addresses and connection details. This file is generated automatically by `import-tofu-to-ansible.py`. Do not edit it manually - your changes will be overwritten.
 
 **group_vars/**: Contains variables organized by server group. When Ansible runs against a server, it loads variables from files matching the server's groups.
 
@@ -122,6 +133,110 @@ db-1 ansible_host=192.168.20.20
 
 ---
 
+## Inventory Groups Explained
+
+The auto-generated inventory file organizes servers by team and function:
+
+### Primary Groups (Directly Assigned)
+
+| Group | Contents | Team |
+|-------|----------|------|
+| `scoring` | Scoring server(s) | Grey |
+| `windows_dc` | First Blue Windows server (Domain Controller) | Blue |
+| `blue_windows_members` | Blue Windows servers except DC | Blue |
+| `blue_linux_members` | Blue Linux servers | Blue |
+| `red_team` | Kali attack boxes | Red |
+
+### Hierarchy Groups (Children)
+
+These groups combine other groups for convenience:
+
+| Group | Contains | Use Case |
+|-------|----------|----------|
+| `windows` | `windows_dc` + `blue_windows_members` | Target all Windows servers |
+| `blue_team` | `windows_dc` + `blue_windows_members` + `blue_linux_members` | Target all Blue Team |
+| `linux_members` | `blue_linux_members` + `scoring` + `red_team` | Target all Linux servers |
+
+### Example Inventory File
+
+```ini
+# Grey Team - Scoring
+[scoring]
+scoring-1 ansible_host=10.10.10.11 floating_ip=100.65.4.11
+
+# Blue Team - Windows
+[windows_dc]
+dc01 ansible_host=10.10.10.21 floating_ip=100.65.4.21
+
+[blue_windows_members]
+blue-win-2 ansible_host=10.10.10.22 floating_ip=100.65.4.22
+
+# Blue Team - Linux
+[blue_linux_members]
+webserver ansible_host=10.10.10.31 floating_ip=100.65.4.31
+blue-linux-2 ansible_host=10.10.10.32 floating_ip=100.65.4.32
+
+# Red Team
+[red_team]
+red-kali-1 ansible_host=10.10.10.41 floating_ip=100.65.4.41
+red-kali-2 ansible_host=10.10.10.42 floating_ip=100.65.4.42
+
+# Hierarchy groups
+[windows:children]
+windows_dc
+blue_windows_members
+
+[blue_team:children]
+windows_dc
+blue_windows_members
+blue_linux_members
+
+[linux_members:children]
+blue_linux_members
+scoring
+red_team
+```
+
+### Targeting Teams in Playbooks
+
+Use the group names to run playbooks on specific teams:
+
+```yaml
+# Run on all Blue Team servers
+- name: Configure Blue Team
+  hosts: blue_team
+  tasks:
+    - name: Example task
+      ansible.builtin.debug:
+        msg: "This runs on Blue Team"
+
+# Run on Red Team only
+- name: Configure Red Team
+  hosts: red_team
+  tasks:
+    - name: Example task
+      ansible.builtin.debug:
+        msg: "This runs on Red Team Kali boxes"
+
+# Run on all Windows servers (DC and members)
+- name: Configure Windows
+  hosts: windows
+  tasks:
+    - name: Example task
+      ansible.builtin.debug:
+        msg: "This runs on all Windows servers"
+
+# Run on Blue Linux only (not Red Team, not scoring)
+- name: Configure Blue Linux
+  hosts: blue_linux_members
+  tasks:
+    - name: Example task
+      ansible.builtin.debug:
+        msg: "This runs on Blue Team Linux servers"
+```
+
+---
+
 ## Running Playbooks
 
 ### From Your Local Machine
@@ -130,7 +245,7 @@ Due to network restrictions, running Ansible from your local machine can be unre
 
 ### From Inside the Network (Recommended)
 
-1. SSH to one of the Linux servers (typically the fourth one):
+1. SSH to one of the Linux servers:
 ```bash
 ssh -J sshjump@ssh.cyberrange.rit.edu cyberrange@<linux-floating-ip>
 ```
@@ -163,6 +278,9 @@ ansible-playbook playbooks/setup-domain-controller.yml
 
 # Just create domain users
 ansible-playbook playbooks/create-domain-users.yml
+
+# Just set up xRDP on Linux
+ansible-playbook playbooks/setup-rdp-linux.yml
 ```
 
 ### Common Command Options
@@ -173,7 +291,10 @@ ansible-playbook playbooks/site.yml -v
 ansible-playbook playbooks/site.yml -vvv   # Very verbose
 
 # Run only against specific hosts
-ansible-playbook playbooks/site.yml --limit web-1
+ansible-playbook playbooks/site.yml --limit dc01
+
+# Run only against a specific group
+ansible-playbook playbooks/site.yml --limit red_team
 
 # Check what would change without making changes
 ansible-playbook playbooks/site.yml --check
@@ -193,8 +314,11 @@ ansible all -m ping
 # Test Windows servers
 ansible windows -m ansible.windows.win_ping
 
-# Test Linux servers
-ansible linux_members -m ping
+# Test Blue Team Linux servers
+ansible blue_linux_members -m ping
+
+# Test Red Team Kali boxes
+ansible red_team -m ping
 ```
 
 ---
@@ -207,28 +331,44 @@ The `site.yml` file is the master playbook. It imports other playbooks in order:
 
 ```yaml
 - name: Validate inventory
-  # Checks that required groups exist
+  # Checks that required groups exist and have hosts
 
 - name: Setup Domain Controller
   import_playbook: setup-domain-controller.yml
-
-- name: Create Domain Users
-  import_playbook: create-domain-users.yml
+  # Runs on: windows_dc (first Blue Windows server)
 
 - name: Join Windows Members to Domain
   import_playbook: join-windows-domain.yml
+  # Runs on: blue_windows_members
+
+- name: Activate Windows
+  import_playbook: activate-windows-kms.yml
+  # Runs on: windows (all Windows servers)
 
 - name: Join Linux Members to Domain
   import_playbook: join-linux-domain.yml
+  # Runs on: blue_linux_members (NOT red_team or scoring)
+
+- name: Create Domain Users
+  import_playbook: create-domain-users.yml
+  # Runs on: windows_dc
+
+- name: Setup RDP on Linux
+  import_playbook: setup-rdp-linux.yml
+  # Runs on: linux_members (all Linux including Red Team)
 
 - name: Setup RDP on Windows
   import_playbook: setup-rdp-windows.yml
-
-- name: Setup xRDP on Linux
-  import_playbook: setup-rdp-linux.yml
+  # Runs on: windows (all Windows servers)
 ```
 
-The order matters. The domain controller must be set up before users can be created, and users must exist before other servers join the domain.
+The order matters:
+1. Domain controller must be set up first
+2. Other servers join the domain after DC is ready
+3. Users are created on the DC
+4. RDP setup can happen anytime after servers are reachable
+
+Note that Red Team Kali boxes only get xRDP setup - they do NOT join the domain because they are attack machines that should not have domain credentials.
 
 ### The domain_controller Role
 
@@ -256,8 +396,8 @@ Variables are defined in `group_vars/`:
 
 - `all.yml`: Domain name, admin credentials, domain users list
 - `windows.yml`: Windows connection settings (WinRM, proxy)
-- `windows_dc.yml`: Domain controller features and attack surface settings
-- `linux_members.yml`: Kerberos, SSSD, and xRDP settings
+- `windows_dc.yml`: Domain controller features and configuration
+- `linux_members.yml`: Kerberos, SSSD, xRDP settings
 
 ---
 
@@ -279,7 +419,7 @@ Create a new file in `playbooks/`:
 # playbooks/setup-webserver.yml
 ---
 - name: Configure Web Servers
-  hosts: web_servers
+  hosts: blue_webservers
   become: true
 
   tasks:
@@ -427,7 +567,7 @@ web_document_root: /var/www/html
 # playbooks/setup-webserver.yml
 ---
 - name: Configure Web Servers
-  hosts: web_servers
+  hosts: blue_webservers
   become: true
   roles:
     - webserver
@@ -524,11 +664,14 @@ Test commands directly:
 # Run a command on all servers
 ansible all -m command -a "hostname"
 
-# Check a service status
-ansible web_servers -m command -a "systemctl status apache2"
+# Check a service status on Blue Team
+ansible blue_team -m command -a "systemctl status apache2"
 
 # Get facts about a server
-ansible web-1 -m setup
+ansible dc01 -m setup
+
+# Run on Red Team only
+ansible red_team -m command -a "whoami"
 ```
 
 ### Common Errors
@@ -578,6 +721,8 @@ journalctl -u apache2 -n 50
 | Windows local account | cyberrange | Cyberrange123! |
 | Domain Administrator | Administrator | Cyberrange123! |
 | Domain users (jdoe, asmith, etc.) | (username) | UserPass123! |
+
+Note: Red Team Kali boxes use only the local `cyberrange` account since they do not join the domain.
 
 ---
 

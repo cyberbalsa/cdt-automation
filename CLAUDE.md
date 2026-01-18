@@ -25,21 +25,17 @@ This infrastructure supports attack/defend CTF competitions using OpenStack's mu
 ### Dynamic Inventory Generation
 The `import-tofu-to-ansible.py` script bridges OpenTofu and Ansible by reading `tofu output -json` and generating `ansible/inventory/production.ini`. This creates dynamic groups:
 
-**By Team:**
+**Primary Groups:**
 - `[scoring]` - Grey Team scoring servers
-- `[blue_windows]` - Blue Team Windows VMs
-- `[blue_linux]` - Blue Team Linux VMs
-- `[red_team]` - Red Team Kali VMs
-
-**By Role:**
 - `[windows_dc]` - First Blue Windows VM (Domain Controller)
 - `[blue_windows_members]` - Blue Windows VMs except DC
 - `[blue_linux_members]` - Blue Linux VMs (join domain)
+- `[red_team]` - Red Team Kali VMs
 
-**Hierarchies:**
+**Hierarchy Groups:**
 - `[windows:children]` - All Windows VMs (windows_dc + blue_windows_members)
-- `[blue_team:children]` - All Blue Team VMs (blue_windows + blue_linux)
-- `[linux_members:children]` - All Linux VMs (blue_linux + red_team + scoring)
+- `[blue_team:children]` - All Blue Team VMs (windows_dc + blue_windows_members + blue_linux_members)
+- `[linux_members:children]` - All Linux VMs (blue_linux_members + red_team + scoring)
 
 ### IP Address Scheme
 - **Scoring VMs**: `10.10.10.11`, `10.10.10.12`, etc. (main project)

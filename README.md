@@ -9,35 +9,116 @@ Use this as a foundation. You will need to modify and extend it significantly to
 ## Table of Contents
 
 1. [What This Template Provides](#what-this-template-provides)
-2. [Understanding the Tools](#understanding-the-tools)
-3. [Setting Up Your Environment](#setting-up-your-environment)
-4. [Using This Template](#using-this-template)
-5. [Customizing for Your Competition](#customizing-for-your-competition)
-6. [OpenTofu Basics](#opentofu-basics)
-7. [Ansible Basics](#ansible-basics)
-8. [Common Operations](#common-operations)
-9. [Troubleshooting](#troubleshooting)
+2. [Architecture Overview](#architecture-overview)
+3. [Understanding the Tools](#understanding-the-tools)
+4. [Prerequisites](#prerequisites)
+5. [Quick Start](#quick-start)
+6. [Customizing for Your Competition](#customizing-for-your-competition)
+7. [OpenTofu Basics](#opentofu-basics)
+8. [Ansible Basics](#ansible-basics)
+9. [Common Operations](#common-operations)
+10. [Troubleshooting](#troubleshooting)
 
 ---
 
 ## What This Template Provides
 
-This template creates a basic Active Directory domain environment:
+This template creates infrastructure across three OpenStack projects:
 
-- One Windows Domain Controller
-- Two Windows member servers
-- Four Linux member servers joined to the domain
-- A private network connecting all servers
-- Floating IPs for external access
+| Project | Contents | Purpose |
+|---------|----------|---------|
+| Main (Grey Team) | Network, router, scoring servers | You control the network and run scoring |
+| Blue (Blue Team) | Windows DC, Windows members, Linux servers | Defenders access these machines |
+| Red (Red Team) | Kali attack boxes | Attackers access these machines |
+
+The template demonstrates a multi-project architecture where:
+
+- Grey Team owns the network infrastructure
+- Blue Team and Red Team VMs run in separate projects for access control
+- All VMs communicate on a shared network (10.10.10.0/24)
+- Each team can only see and manage their own servers in OpenStack
 
 This is NOT a complete competition environment. It is a starting point that demonstrates the patterns you will use to build your own infrastructure. Your competition will likely need:
 
-- More network segments (DMZ, internal, management, Red Team network)
-- Additional services (web servers, mail servers, databases, etc.)
-- Team workstations (one per Blue Team member, one per Red Team member)
-- A scoring engine
+- Additional network segments (DMZ, internal, management)
+- More services (web servers, mail servers, databases, etc.)
 - Custom vulnerabilities and flags
+- A scoring engine with service checks
 - Firewall/router between network segments
+
+---
+
+## Architecture Overview
+
+### Multi-Project Structure
+
+```
+                         INTERNET
+                             |
+                        [MAIN-NAT]          External network (100.65.0.0/16)
+                             |
+                       [cdt_router]         Router (main project)
+                             |
+                       [cdt_subnet]         10.10.10.0/24 (main project)
+                             |
+        +--------------------+--------------------+--------------------+
+        |                    |                    |                    |
+   [Scoring]            [Blue Team]          [Blue Team]          [Red Team]
+   10.10.10.1x          Windows              Linux                Kali
+   Main Project         10.10.10.2x          10.10.10.3x          10.10.10.4x
+                        Blue Project         Blue Project         Red Project
+```
+
+### How Network Sharing Works
+
+The network and subnet exist in the main (Grey Team) project. OpenStack RBAC (Role-Based Access Control) policies share the network with the Blue and Red projects:
+
+```
+Main Project                    Blue Project              Red Project
++------------------+           +----------------+        +----------------+
+| cdt_net          |  shared   | (can attach    |        | (can attach    |
+| cdt_subnet       | --------> |  VMs to net)   |        |  VMs to net)   |
+| cdt_router       |  via      |                |        |                |
+| RBAC policies    |  RBAC     | blue_windows   |        | red_kali       |
+| scoring VMs      |           | blue_linux     |        |                |
++------------------+           +----------------+        +----------------+
+```
+
+This architecture means:
+
+- Grey Team controls the network (can see all traffic, manage routing)
+- Blue Team can only see their own VMs in OpenStack
+- Red Team can only see their own VMs in OpenStack
+- All VMs can communicate because they share the same network
+
+### IP Address Scheme
+
+| Range | Team | Purpose | Project |
+|-------|------|---------|---------|
+| 10.10.10.11-19 | Grey | Scoring servers | Main |
+| 10.10.10.21-29 | Blue | Windows servers (DC at .21) | Blue |
+| 10.10.10.31-39 | Blue | Linux servers | Blue |
+| 10.10.10.41-49 | Red | Kali attack boxes | Red |
+
+The first Blue Windows server (10.10.10.21) becomes the Active Directory Domain Controller.
+
+### What Gets Created
+
+**Main Project (Grey Team):**
+- Virtual network (10.10.10.0/24)
+- Subnet with DHCP disabled (fixed IPs only)
+- Router connected to external network
+- RBAC policies sharing network with Blue and Red projects
+- Scoring server(s) running Ubuntu Desktop
+
+**Blue Project (Blue Team):**
+- Windows Server(s) - first one becomes Domain Controller
+- Linux server(s) - joined to the domain
+- Security groups for Windows and Linux
+
+**Red Project (Red Team):**
+- Kali Linux attack boxes with xRDP
+- Security group for Linux
 
 ---
 
@@ -103,177 +184,53 @@ This separation means you can destroy and recreate servers without losing your c
 
 ---
 
-## Setting Up Your Environment
+## Prerequisites
 
-### Required Software
+Before you begin, you need:
 
-Install these tools on your local machine:
+- Three OpenStack project names from your instructor (main, blue, red)
+- Required software installed (Git, OpenTofu, Ansible, Python 3)
+- An RSA SSH key pair uploaded to OpenStack
 
-**Git** - for version control
-```bash
-# Check if installed
-git --version
-
-# Install on Ubuntu/Debian
-sudo apt update && sudo apt install git
-
-# Install on macOS
-brew install git
-```
-
-**OpenTofu** - for creating infrastructure
-```bash
-# Follow instructions at https://opentofu.org/docs/intro/install/
-
-# Verify installation
-tofu version
-```
-
-**Ansible** - for configuring servers
-```bash
-# Install on Ubuntu/Debian
-sudo apt update && sudo apt install ansible
-
-# Install on macOS
-brew install ansible
-
-# Verify installation
-ansible --version
-```
-
-**Python 3** - for running helper scripts
-```bash
-# Usually pre-installed, verify with
-python3 --version
-```
-
-### SSH Key Setup
-
-You need an RSA SSH key pair. Windows servers require RSA format.
-
-```bash
-# Check if you have one
-ls ~/.ssh/id_rsa*
-
-# Create one if needed
-ssh-keygen -t rsa -b 4096
-```
-
-Upload your public key to OpenStack:
-
-1. Go to https://openstack.cyberrange.rit.edu
-2. Navigate to Compute then Key Pairs
-3. Click Import Public Key
-4. Name it something memorable (you will need this name later)
-5. Paste the contents of `~/.ssh/id_rsa.pub`
-
-### OpenStack Credentials
-
-OpenTofu authenticates to OpenStack using **environment variables**. You download a credentials file from OpenStack and source it before running commands.
-
-**Setup Process:**
-
-1. Go to https://openstack.cyberrange.rit.edu
-2. Navigate to Identity then Application Credentials
-3. Click Create Application Credential
-4. Give it a name like `grey-team-automation`
-5. Click Create Application Credential
-6. Click Download openrc file (save the secret - it is only shown once)
-7. Move the downloaded file to this project directory
-
-Run the setup script to configure credentials:
-
-```bash
-./quick-start.sh
-```
-
-The script will find your credentials file and rename it to `app-cred-openrc.sh`.
-
-**How it works:**
-
-The downloaded openrc file is a shell script that sets environment variables (`OS_APPLICATION_CREDENTIAL_ID`, `OS_APPLICATION_CREDENTIAL_SECRET`, etc.). When you run `source app-cred-openrc.sh`, these variables are loaded into your shell session. The OpenStack provider in `main.tf` automatically reads these environment variables.
-
-You must source the credentials file in every new terminal session before running `tofu` commands.
-
-### Configure Your SSH Key Name
-
-Edit `opentofu/variables.tf` and find the `keypair_name` variable. Change it to match the name you used when uploading your key to OpenStack.
+For detailed setup instructions, see [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md).
 
 ---
 
-## Using This Template
+## Quick Start
 
-### First Time Setup
+For experienced users who know OpenTofu and Ansible:
 
 ```bash
-# 1. Clone this repository
+# 1. Clone and enter the repository
 git clone <your-repo-url>
 cd cdt-automation
 
-# 2. Run the setup script
+# 2. Move your openrc file here and run setup
+mv ~/Downloads/app-cred-*-openrc.sh .
 ./quick-start.sh
 
-# 3. Edit variables.tf to set your SSH key name
+# 3. Edit variables.tf with your project IDs and SSH key name
 nano opentofu/variables.tf
-```
 
-### Deploy the Template Infrastructure
-
-```bash
-# Load credentials (required before every tofu command)
+# 4. Deploy infrastructure
 source app-cred-openrc.sh
-
-# Navigate to OpenTofu directory
 cd opentofu
-
-# Initialize OpenTofu (first time only)
-tofu init
-
-# Preview what will be created
 tofu plan
-
-# Create the infrastructure
 tofu apply
-# Type 'yes' when prompted
-
-# Return to project root
 cd ..
-```
 
-### Generate Ansible Inventory
-
-After OpenTofu creates the servers, generate the Ansible inventory:
-
-```bash
+# 5. Generate inventory and run Ansible
 python3 import-tofu-to-ansible.py
-```
 
-This creates `ansible/inventory/production.ini` with all server details.
-
-### Configure the Servers
-
-Because of network restrictions, run Ansible from inside the cloud network. Use the fourth Linux server as your Ansible control node.
-
-```bash
-# Find the floating IP of the fourth Linux server
-cat ansible/inventory/production.ini
-
-# Copy ansible directory to that server
-scp -r ansible cyberrange@<floating-ip>:~/
-
-# SSH to the server
-ssh -J sshjump@ssh.cyberrange.rit.edu cyberrange@<floating-ip>
-# Password: Cyberrange123!
-
-# Install Ansible on the control node
+# 6. Copy ansible to a control node and run playbooks
+scp -r -J sshjump@ssh.cyberrange.rit.edu ansible/ cyberrange@<linux-ip>:~/
+ssh -J sshjump@ssh.cyberrange.rit.edu cyberrange@<linux-ip>
+# On the control node:
 sudo apt update && sudo apt install -y ansible
-
-# Run the main playbook
-cd ansible
-ansible-playbook playbooks/site.yml
+cd ~/ansible && ansible-playbook playbooks/site.yml
 ```
 
-This takes 30-60 minutes. It sets up the domain controller, joins all servers to the domain, and creates user accounts.
+For step-by-step instructions, see [DEPLOYMENT-GUIDE.md](DEPLOYMENT-GUIDE.md).
 
 ---
 
@@ -283,16 +240,18 @@ This template is a starting point. Your competition needs significant additions.
 
 ### Adding Network Segments
 
-Your competition requires multiple network segments (DMZ, internal, management, Red Team). Edit `opentofu/network.tf` to add more networks:
+Your competition likely requires multiple network segments (DMZ, internal, management). Edit `opentofu/network.tf` to add more networks:
 
 ```hcl
 # Example: Adding a DMZ network
 resource "openstack_networking_network_v2" "dmz_net" {
+  provider       = openstack.main
   name           = "competition-dmz-net"
   admin_state_up = true
 }
 
 resource "openstack_networking_subnet_v2" "dmz_subnet" {
+  provider        = openstack.main
   name            = "competition-dmz-subnet"
   network_id      = openstack_networking_network_v2.dmz_net.id
   cidr            = "192.168.10.0/24"
@@ -302,24 +261,27 @@ resource "openstack_networking_subnet_v2" "dmz_subnet" {
 }
 ```
 
+Note the `provider = openstack.main` line. In this multi-project setup, you must specify which project should own each resource.
+
 ### Adding Different Server Types
 
-Edit `opentofu/instances.tf` to add new server types. Copy the existing patterns:
+Edit `opentofu/instances.tf` to add new server types. Specify the correct provider for each:
 
 ```hcl
-# Example: Adding web servers
-resource "openstack_compute_instance_v2" "web_servers" {
-  count           = var.web_server_count
+# Example: Adding web servers to Blue Team
+resource "openstack_compute_instance_v2" "blue_webservers" {
+  provider        = openstack.blue
+  count           = var.blue_webserver_count
   name            = "web-${count.index + 1}"
   image_name      = var.debian_image
   flavor_name     = var.flavor
   key_name        = var.keypair_name
-  security_groups = [openstack_networking_secgroup_v2.allow_all.name]
+  security_groups = [openstack_networking_secgroup_v2.blue_linux_sg.name]
   user_data       = file("${path.module}/debian-userdata.yaml")
 
   network {
-    uuid        = openstack_networking_network_v2.dmz_net.id
-    fixed_ip_v4 = "192.168.10.${count.index + 10}"
+    uuid        = openstack_networking_network_v2.cdt_net.id
+    fixed_ip_v4 = "10.10.10.5${count.index + 1}"
   }
 }
 ```
@@ -327,8 +289,8 @@ resource "openstack_compute_instance_v2" "web_servers" {
 Add the variable in `variables.tf`:
 
 ```hcl
-variable "web_server_count" {
-  description = "Number of web servers to create"
+variable "blue_webserver_count" {
+  description = "Number of Blue Team web servers"
   type        = number
   default     = 2
 }
@@ -337,44 +299,11 @@ variable "web_server_count" {
 Add the output in `outputs.tf`:
 
 ```hcl
-output "web_server_ips" {
-  value = openstack_compute_instance_v2.web_servers[*].access_ip_v4
-}
-```
-
-### Adding Team Workstations
-
-Your competition requires dedicated workstations for each team member. Add them in `instances.tf`:
-
-```hcl
-# Blue Team workstations - one per team member
-resource "openstack_compute_instance_v2" "blue_workstations" {
-  count           = var.blue_team_size
-  name            = "blue-ws-${count.index + 1}"
-  image_name      = var.windows_image  # or debian for Linux workstations
-  flavor_name     = var.flavor
-  key_name        = var.keypair_name
-  security_groups = [openstack_networking_secgroup_v2.allow_all.name]
-  user_data       = file("${path.module}/windows-userdata.ps1")
-
-  network {
-    uuid        = openstack_networking_network_v2.internal_net.id
-    fixed_ip_v4 = "192.168.20.${count.index + 101}"
-  }
-}
-
-# Red Team workstations - one per team member
-resource "openstack_compute_instance_v2" "red_workstations" {
-  count           = var.red_team_size
-  name            = "red-attack-${count.index + 1}"
-  image_name      = "kali-2024"  # or your Kali image name
-  flavor_name     = var.flavor
-  key_name        = var.keypair_name
-  security_groups = [openstack_networking_secgroup_v2.allow_all.name]
-
-  network {
-    uuid        = openstack_networking_network_v2.redteam_net.id
-    fixed_ip_v4 = "192.168.100.${count.index + 101}"
+output "blue_webserver_ips" {
+  description = "Blue Team web server IPs"
+  value = {
+    names        = openstack_compute_instance_v2.blue_webservers[*].name
+    internal_ips = openstack_compute_instance_v2.blue_webservers[*].access_ip_v4
   }
 }
 ```
@@ -426,26 +355,12 @@ Create the handler at `ansible/roles/webserver/handlers/main.yml`:
     state: restarted
 ```
 
-Create a template at `ansible/roles/webserver/templates/site.conf.j2`:
-
-```apache
-<VirtualHost *:80>
-    ServerName {{ inventory_hostname }}
-    DocumentRoot /var/www/html
-
-    <Directory /var/www/html>
-        AllowOverride All
-        Require all granted
-    </Directory>
-</VirtualHost>
-```
-
-Use the role in a playbook:
+Use the role in a playbook targeting the correct inventory group:
 
 ```yaml
 ---
 - name: Configure Web Servers
-  hosts: web_servers
+  hosts: blue_webservers
   become: true
   roles:
     - webserver
@@ -455,32 +370,9 @@ Use the role in a playbook:
 
 Your competition needs a scoring engine. The scoring engine periodically checks if services are working and awards points. This is something you must build or adapt from existing tools.
 
-Basic approach using Ansible for checks (simple but limited):
-
-```yaml
-# scoring-check.yml - run this periodically via cron
----
-- name: Check Scored Services
-  hosts: localhost
-  gather_facts: false
-  tasks:
-    - name: Check web server HTTP
-      ansible.builtin.uri:
-        url: "http://{{ web_server_ip }}/index.html"
-        return_content: true
-        status_code: 200
-      register: web_check
-      ignore_errors: true
-
-    - name: Log web server status
-      ansible.builtin.lineinfile:
-        path: /var/log/scoring/web.log
-        line: "{{ ansible_date_time.iso8601 }},{{ 'UP' if web_check.status == 200 else 'DOWN' }}"
-        create: true
-```
-
 For a real competition, consider using or adapting:
-- DWAYNE-INATOR-5000: https://github.com/DSU-DefSec/DWAYNE-INATOR-5000 (CCDC-style, service uptime scoring with SLA penalties)
+
+- DWAYNE-INATOR-5000: https://github.com/DSU-DefSec/DWAYNE-INATOR-5000 (CCDC-style, service uptime scoring)
 - FAUST CTF Gameserver: https://github.com/fausecteam/ctf-gameserver (Attack/defend with flag submission)
 - Custom Python scoring engine
 
@@ -488,7 +380,7 @@ For a real competition, consider using or adapting:
 
 The `import-tofu-to-ansible.py` script generates Ansible inventory from OpenTofu output. When you add new server types, update this script to include them.
 
-Read the script to understand its structure, then add sections for your new server types following the existing patterns.
+The script reads `tofu output -json` and creates inventory groups. Add sections for your new server types following the existing patterns.
 
 ---
 
@@ -500,12 +392,46 @@ This section explains OpenTofu concepts you need to understand for customization
 
 ```
 opentofu/
-  main.tf        - Provider configuration (OpenStack connection)
+  main.tf        - Provider configuration (OpenStack connection, project aliases)
   variables.tf   - Input variables (things you can change)
-  network.tf     - Network resources (networks, subnets, routers)
+  network.tf     - Network resources (networks, subnets, routers, RBAC policies)
   instances.tf   - Compute instances (virtual machines)
   security.tf    - Security groups (firewall rules)
   outputs.tf     - Output values (information displayed after apply)
+```
+
+### Provider Aliases
+
+This project uses multiple OpenStack providers to deploy to different projects:
+
+```hcl
+provider "openstack" {
+  alias     = "main"
+  tenant_id = var.main_project_id
+  # ... other settings
+}
+
+provider "openstack" {
+  alias     = "blue"
+  tenant_id = var.blue_project_id
+  # ... other settings
+}
+
+provider "openstack" {
+  alias     = "red"
+  tenant_id = var.red_project_id
+  # ... other settings
+}
+```
+
+When creating resources, specify which project should own them:
+
+```hcl
+# This VM will be created in the Blue project
+resource "openstack_compute_instance_v2" "blue_linux" {
+  provider = openstack.blue
+  # ...
+}
 ```
 
 ### Resources
@@ -514,21 +440,12 @@ A resource is something OpenTofu creates and manages. The syntax is:
 
 ```hcl
 resource "TYPE" "NAME" {
+  provider  = openstack.PROJECT  # Which project
   attribute = "value"
 }
 ```
 
 The TYPE determines what kind of resource (server, network, etc.). The NAME is your identifier for referencing it elsewhere.
-
-Example:
-
-```hcl
-resource "openstack_compute_instance_v2" "my_server" {
-  name        = "actual-server-name"
-  image_name  = "debian-trixie-amd64-cloud"
-  flavor_name = "medium"
-}
-```
 
 ### Variables
 
@@ -536,15 +453,16 @@ Variables let you customize values without editing resource definitions:
 
 ```hcl
 # In variables.tf
-variable "server_count" {
-  description = "Number of servers to create"
+variable "blue_linux_count" {
+  description = "Number of Blue Team Linux servers"
   type        = number
-  default     = 3
+  default     = 2
 }
 
 # In instances.tf
-resource "openstack_compute_instance_v2" "servers" {
-  count = var.server_count
+resource "openstack_compute_instance_v2" "blue_linux" {
+  provider = openstack.blue
+  count    = var.blue_linux_count
   # ...
 }
 ```
@@ -607,10 +525,10 @@ tofu output -json  # JSON format for scripts
 tofu destroy
 
 # Destroy specific resource
-tofu destroy -target=openstack_compute_instance_v2.servers[0]
+tofu destroy -target=openstack_compute_instance_v2.blue_linux[0]
 
 # Force recreation of a resource
-tofu taint openstack_compute_instance_v2.servers[0]
+tofu taint openstack_compute_instance_v2.blue_linux[0]
 tofu apply
 ```
 
@@ -637,30 +555,61 @@ ansible/
     join-windows-domain.yml
     join-linux-domain.yml
     create-domain-users.yml
+    setup-rdp-linux.yml
+    setup-rdp-windows.yml
   roles/
     domain_controller/
     linux_domain_member/
     domain_users/
 ```
 
-### Inventory
+### Inventory Groups
 
-The inventory file lists servers and how to connect to them:
+The auto-generated inventory organizes servers by team:
 
 ```ini
-[web_servers]
-web-1 ansible_host=192.168.10.10
-web-2 ansible_host=192.168.10.11
+[scoring]
+# Grey Team scoring servers
 
-[database_servers]
-db-1 ansible_host=192.168.20.20
+[windows_dc]
+# First Blue Windows server (Domain Controller)
 
-[web_servers:vars]
-ansible_user=admin
-ansible_password=secret
+[blue_windows_members]
+# Blue Windows servers except DC
+
+[blue_linux_members]
+# Blue Linux servers
+
+[red_team]
+# Red Team Kali boxes
+
+[windows:children]
+windows_dc
+blue_windows_members
+
+[blue_team:children]
+windows_dc
+blue_windows_members
+blue_linux_members
+
+[linux_members:children]
+blue_linux_members
+scoring
+red_team
 ```
 
-Groups are defined in square brackets. Servers are listed under their group. Variables for a group end with `:vars`.
+Target specific teams in playbooks:
+
+```yaml
+# Run on all Blue Team servers
+- hosts: blue_team
+
+# Run on Red Team only
+- hosts: red_team
+
+# Run on all Windows servers
+- hosts: windows
+```
 
 ### Playbooks
 
@@ -792,7 +741,7 @@ ansible all -m ping
 ansible all -m command -a "whoami"
 
 # Run a command on a specific group
-ansible web_servers -m command -a "systemctl status apache2"
+ansible blue_team -m command -a "hostname"
 ```
 
 ---
@@ -804,8 +753,8 @@ ansible web_servers -m command -a "systemctl status apache2"
 Edit `opentofu/variables.tf`:
 
 ```hcl
-variable "windows_count" {
-  default = 5  # Changed from 3
+variable "blue_linux_count" {
+  default = 4  # Changed from 2
 }
 ```
 
@@ -825,14 +774,14 @@ python3 import-tofu-to-ansible.py
 Use the rebuild script:
 
 ```bash
-./rebuild-vm.sh 10.10.10.21
+./rebuild-vm.sh 10.10.10.31
 ```
 
 This destroys and recreates only that server, then runs the appropriate Ansible playbook.
 
 ### Adding a New Service
 
-1. Add the server in OpenTofu (edit `instances.tf`)
+1. Add the server in OpenTofu (edit `instances.tf`, use correct provider)
 2. Run `tofu apply` to create it
 3. Update `import-tofu-to-ansible.py` to include the new server in inventory
 4. Run `python3 import-tofu-to-ansible.py`
@@ -849,7 +798,7 @@ cd opentofu
 tofu destroy
 ```
 
-Type `yes` to confirm.
+Type `yes` to confirm. This destroys resources in all three projects.
 
 ---
 
@@ -864,6 +813,14 @@ source app-cred-openrc.sh
 ```
 
 You must run this every time you open a new terminal.
+
+### OpenTofu says "could not find project" or similar
+
+Your project IDs in `variables.tf` are incorrect. Double-check them in the OpenStack dashboard:
+
+1. Log into OpenStack
+2. Go to Identity, then Projects
+3. Verify the IDs match exactly (they are case-sensitive)
 
 ### Ansible says "No hosts matched"
 
@@ -913,6 +870,14 @@ python3 import-tofu-to-ansible.py
 # Then run Ansible again
 ```
 
+### RBAC errors when creating Blue or Red VMs
+
+The network sharing might have failed. Check:
+
+1. The main project's network exists
+2. RBAC policies were created (check in OpenTofu state)
+3. Your credential has access to all three projects
+
 ---
 
 ## Next Steps for Your Competition
@@ -926,3 +891,5 @@ python3 import-tofu-to-ansible.py
 7. **Document everything** - Your documentation is part of the deliverable
 
 The provided code demonstrates patterns you can follow. Study how the existing OpenTofu resources and Ansible roles are structured, then create your own following the same patterns.
+
+See [STUDENT-CHECKLIST.md](STUDENT-CHECKLIST.md) for a detailed checklist of tasks to complete.

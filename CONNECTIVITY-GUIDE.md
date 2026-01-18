@@ -13,9 +13,19 @@ Servers in this project are assigned IP addresses from two ranges:
 - Format: `100.65.x.x`
 - Used for external access
 
-**Internal IPs (Private)**: `10.10.10.0/24` (or your custom network)
+**Internal IPs (Private)**: `10.10.10.0/24` (shared network)
 - These are private IP addresses used for communication between servers
 - Not directly accessible from outside
+- All teams share this network, but VMs are owned by different OpenStack projects
+
+### IP Address Ranges by Team
+
+| Range | Team | Purpose |
+|-------|------|---------|
+| 10.10.10.11-19 | Grey Team | Scoring servers |
+| 10.10.10.21-29 | Blue Team | Windows servers (DC at .21) |
+| 10.10.10.31-39 | Blue Team | Linux servers |
+| 10.10.10.41-49 | Red Team | Kali attack boxes |
 
 Even though floating IPs are "public," you cannot reach them directly from the internet. All access goes through a jump host at `ssh.cyberrange.rit.edu`.
 
@@ -29,6 +39,17 @@ All server images in this environment use the same default local account:
 **Password**: `Cyberrange123!`
 
 This account has sudo privileges and can be used for initial access and administration.
+
+### Credentials by Server Type
+
+| Server Type | Local Account | Domain Account |
+|-------------|---------------|----------------|
+| Blue Windows | cyberrange / Cyberrange123! | CDT\Administrator / Cyberrange123! |
+| Blue Linux | cyberrange / Cyberrange123! | jdoe / UserPass123! (after domain join) |
+| Red Kali | cyberrange / Cyberrange123! | N/A (not domain-joined) |
+| Scoring | cyberrange / Cyberrange123! | N/A (not domain-joined) |
+
+Note: Red Team Kali boxes and scoring servers do not join the domain. Use only the local `cyberrange` account for these machines.
 
 ---
 
@@ -174,6 +195,32 @@ At the xRDP login screen:
 - Enter the password
 
 The LXQT desktop will start after login.
+
+### Red Team Kali Boxes
+
+Kali boxes are configured similarly to other Linux servers. They have xRDP installed for graphical access.
+
+**SSH Access:**
+```bash
+ssh -J sshjump@ssh.cyberrange.rit.edu cyberrange@<kali-floating-ip>
+# Password: Cyberrange123!
+```
+
+**RDP Access (graphical desktop):**
+
+Create an SSH tunnel:
+```bash
+ssh -L 3389:<kali-floating-ip>:3389 sshjump@ssh.cyberrange.rit.edu -N
+```
+
+Connect with your RDP client to `localhost`. At the xRDP login screen:
+- Session: Xorg
+- Username: `cyberrange`
+- Password: `Cyberrange123!`
+
+**Important:** Kali boxes do NOT join the domain. Only the local `cyberrange` account is available. This is intentional - Red Team attack machines should not have domain credentials.
+
+Kali comes pre-installed with security tools. The desktop environment provides access to tools like Burp Suite, Metasploit, and others.
 
 ### Domain Users (After Domain Setup)
 
@@ -338,6 +385,7 @@ Common ports to allow:
 | What | How |
 |------|-----|
 | SSH to Linux server | `ssh -J sshjump@ssh.cyberrange.rit.edu cyberrange@<floating-ip>` |
+| SSH to Kali box | `ssh -J sshjump@ssh.cyberrange.rit.edu cyberrange@<kali-floating-ip>` |
 | SSH web client | https://ssh.cyberrange.rit.edu |
 | Default username | `cyberrange` |
 | Default password | `Cyberrange123!` |
@@ -345,3 +393,12 @@ Common ports to allow:
 | SOCKS5 proxy | `ssh.cyberrange.rit.edu:1080` |
 | RDP via tunnel | `ssh -L 3389:<ip>:3389 sshjump@ssh.cyberrange.rit.edu -N` |
 | Copy files | `scp -J sshjump@ssh.cyberrange.rit.edu file cyberrange@<ip>:~/` |
+
+### IP Ranges Quick Reference
+
+| Team | IP Range | Example |
+|------|----------|---------|
+| Grey (Scoring) | 10.10.10.11-19 | 10.10.10.11 |
+| Blue (Windows) | 10.10.10.21-29 | 10.10.10.21 (DC) |
+| Blue (Linux) | 10.10.10.31-39 | 10.10.10.31 |
+| Red (Kali) | 10.10.10.41-49 | 10.10.10.41 |
