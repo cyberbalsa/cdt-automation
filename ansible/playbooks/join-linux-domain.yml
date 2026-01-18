@@ -83,10 +83,13 @@
     # Chrony: https://chrony-project.org/documentation.html
 
     - name: Set timezone to America/New_York
-      community.general.timezone:
-        name: America/New_York
+      ansible.builtin.command:
+        cmd: timedatectl set-timezone America/New_York
+      # Using timedatectl (built-in systemd command) instead of community.general.timezone
+      # to avoid external collection dependency. Works on all modern Linux distros.
+      # Docs: https://www.freedesktop.org/software/systemd/man/timedatectl.html
+      changed_when: true
       register: timezone_result
-      # Docs: https://docs.ansible.com/ansible/latest/collections/community/general/timezone_module.html
 
     - name: Install chrony for time synchronization
       ansible.builtin.apt:
