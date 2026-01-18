@@ -27,13 +27,23 @@
 - name: Install and Configure xRDP on Linux Servers
   hosts: linux_members  # All Linux/Ubuntu machines
   become: true  # Run with sudo
-  gather_facts: true
+  gather_facts: false  # Defer until after SSH is ready
 
   vars:
     # Desktop environment to install
     # XFCE is lightweight and fast (good for RDP)
     desktop_environment: lxqt
     xrdp_port: 3389
+
+  pre_tasks:
+    - name: Wait for SSH to be ready (may take 5 minutes after VM creation)
+      ansible.builtin.wait_for_connection:
+        timeout: 600
+        delay: 10
+        sleep: 5
+
+    - name: Gather facts after connection is ready
+      ansible.builtin.setup:
 
   tasks:
     # --------------------------------------------------------------------------

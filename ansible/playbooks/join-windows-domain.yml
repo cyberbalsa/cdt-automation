@@ -18,8 +18,8 @@
 #   ansible-playbook playbooks/join-windows-domain.yml
 
 - name: Join Windows Member Servers to Domain
-  hosts: windows_members  # All Windows VMs EXCEPT the domain controller
-  gather_facts: true
+  hosts: blue_windows_members  # All Windows VMs EXCEPT the domain controller
+  gather_facts: false  # Defer until after WinRM is ready
   # Note: If you only have 2 Windows VMs total, this will only affect 1 VM
 
   vars:
@@ -27,6 +27,15 @@
     dc_internal_ip: "{{ hostvars[groups['windows_dc'][0]]['internal_ip'] }}"
 
   pre_tasks:
+    - name: Wait for WinRM to be ready (may take 10-15 minutes after VM creation)
+      ansible.builtin.wait_for_connection:
+        timeout: 900
+        delay: 30
+        sleep: 10
+
+    - name: Gather facts after connection is ready
+      ansible.builtin.setup:
+
     - name: Load global variables
       ansible.builtin.include_vars:
         file: "../group_vars/all.yml"

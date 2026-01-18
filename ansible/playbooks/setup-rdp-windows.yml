@@ -19,7 +19,17 @@
 
 - name: Configure Remote Desktop on Windows Servers
   hosts: windows  # All Windows machines (DC + members)
-  gather_facts: true
+  gather_facts: false  # Defer until after WinRM is ready
+
+  pre_tasks:
+    - name: Wait for WinRM to be ready (may take 10-15 minutes after VM creation)
+      ansible.builtin.wait_for_connection:
+        timeout: 900
+        delay: 30
+        sleep: 10
+
+    - name: Gather facts after connection is ready
+      ansible.builtin.setup:
 
   tasks:
     # --------------------------------------------------------------------------

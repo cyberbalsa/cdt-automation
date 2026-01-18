@@ -159,8 +159,19 @@ resource "openstack_compute_instance_v2" "blue_linux" {
     delete_on_termination = true
   }
 
-  user_data = file("${path.module}/debian-userdata.yaml")
-  # Cloud-init YAML that sets up the cyberrange user
+  user_data = templatefile("${path.module}/debian-userdata.sh", {
+    instance_num = count.index + 1
+  })
+  # CLOUD-INIT USER DATA:
+  # This bash script runs on first boot to configure the VM.
+  # It creates the cyberrange user and enables SSH password auth.
+  #
+  # TEMPLATEFILE EXPLAINED:
+  # templatefile() reads a file and replaces variables like ${instance_num}
+  # with actual values. Each VM gets its own instance number (1, 2, 3...).
+  #
+  # The script writes the instance number to /etc/goad/instance_num
+  # which Ansible can read later for VM-specific configuration.
 
   depends_on = [
     openstack_networking_rbac_policy_v2.share_with_blue
@@ -199,7 +210,11 @@ resource "openstack_compute_instance_v2" "scoring" {
     delete_on_termination = true
   }
 
-  user_data = file("${path.module}/debian-userdata.yaml")
+  user_data = templatefile("${path.module}/debian-userdata.sh", {
+    instance_num = count.index + 1
+  })
+  # Same cloud-init script as Blue Linux VMs.
+  # Scoring servers need the cyberrange user for Ansible access.
 
   # SCORING ENGINE:
   # This VM runs the scoring software that:

@@ -23,10 +23,19 @@
 
 - name: Setup Active Directory Domain Controller
   hosts: windows_dc  # Targets only the domain controller (first Windows VM)
-  gather_facts: true
+  gather_facts: false  # Defer until after WinRM is ready
 
   # Pre-flight checks
   pre_tasks:
+    - name: Wait for WinRM to be ready (may take 10-15 minutes after VM creation)
+      ansible.builtin.wait_for_connection:
+        timeout: 900
+        delay: 30
+        sleep: 10
+
+    - name: Gather facts after connection is ready
+      ansible.builtin.setup:
+
     - name: Load global variables
       ansible.builtin.include_vars:
         file: "../group_vars/all.yml"

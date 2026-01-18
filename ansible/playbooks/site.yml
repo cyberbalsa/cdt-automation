@@ -100,7 +100,7 @@
           - "  Domain: {{ domain_name }}"
           - "  Windows VMs: {{ groups['windows'] | length }}"
           - "    - Domain Controller: {{ groups['windows_dc'][0] }}"
-          - "    - Member Servers: {{ groups['windows_members'] | length }}"
+          - "    - Member Servers: {{ groups['blue_windows_members'] | length }}"
           - "  Linux VMs: {{ groups['linux_members'] | length }}"
           - ""
           - "Deployment Steps:"
@@ -138,7 +138,7 @@
 
 - name: Join Windows Member Servers to Domain
   import_playbook: join-windows-domain.yml
-  when: groups['windows_members'] | length > 0
+  when: groups['blue_windows_members'] | length > 0
   tags: ['windows', 'domain_join']
 
 # ==============================================================================

@@ -28,13 +28,22 @@
 - name: Join Linux Machines to Active Directory Domain
   hosts: linux_members  # All Linux VMs (Debian/Ubuntu)
   become: true  # Run tasks with sudo
-  gather_facts: true
+  gather_facts: false  # Defer until after SSH is ready
 
   vars:
     # Get the domain controller's internal IP dynamically
     dc_internal_ip: "{{ hostvars[groups['windows_dc'][0]]['internal_ip'] }}"
 
   pre_tasks:
+    - name: Wait for SSH to be ready (may take 5 minutes after VM creation)
+      ansible.builtin.wait_for_connection:
+        timeout: 600
+        delay: 10
+        sleep: 5
+
+    - name: Gather facts after connection is ready
+      ansible.builtin.setup:
+
     - name: Load global variables
       ansible.builtin.include_vars:
         file: "../group_vars/all.yml"
