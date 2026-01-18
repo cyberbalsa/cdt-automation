@@ -1,0 +1,160 @@
+# {{ ansible_managed }}
+# DWAYNE-INATOR-5000 Configuration
+# Generated from Ansible variables - do not edit manually
+
+# ==============================================================================
+# EVENT SETTINGS
+# ==============================================================================
+event = "{{ scoring_event_name }}"
+verbose = {{ scoring_verbose | lower }}
+timezone = "{{ scoring_timezone }}"
+port = {{ scoring_port }}
+startpaused = {{ scoring_start_paused | lower }}
+
+# ==============================================================================
+# TIMING SETTINGS
+# ==============================================================================
+delay = {{ scoring_delay }}
+jitter = {{ scoring_jitter }}
+timeout = {{ scoring_timeout }}
+servicepoints = {{ scoring_service_points }}
+slathreshold = {{ scoring_sla_threshold }}
+slapoints = {{ scoring_sla_points }}
+
+# ==============================================================================
+# ADMIN ACCOUNTS
+# ==============================================================================
+{% for admin in scoring_admins %}
+[[admin]]
+name = "{{ admin.name }}"
+pw = "{{ admin.password }}"
+
+{% endfor %}
+# ==============================================================================
+# TEAMS
+# ==============================================================================
+{% for team in scoring_teams %}
+[[team]]
+ip = "{{ team.id }}"
+pw = "{{ team.password }}"
+
+{% endfor %}
+# ==============================================================================
+# CREDENTIAL LISTS
+# ==============================================================================
+{% for cred in scoring_credlists %}
+[[creds]]
+name = "{{ cred.name }}"
+usernames = [{% for user in cred.usernames %}"{{ user }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+defaultpw = "{{ cred.default_password }}"
+
+{% endfor %}
+# ==============================================================================
+# BOX CONFIGURATIONS
+# ==============================================================================
+{% for box in scoring_boxes %}
+[[box]]
+name = "{{ box.name }}"
+ip = "{{ box.ip }}"
+
+{% for check in box.checks %}
+    [[box.{{ check.type }}]]
+{% if check.display is defined %}
+    display = "{{ check.display }}"
+{% endif %}
+{% if check.credlists is defined %}
+    credlists = [{% for cl in check.credlists %}"{{ cl }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+{% endif %}
+{% if check.port is defined %}
+    port = {{ check.port }}
+{% endif %}
+{% if check.encrypted is defined %}
+    encrypted = {{ check.encrypted | lower }}
+{% endif %}
+{% if check.anonymous is defined %}
+    anonymous = {{ check.anonymous | lower }}
+{% endif %}
+{# DNS Records #}
+{% if check.records is defined %}
+{% for record in check.records %}
+        [[box.dns.record]]
+        kind = "{{ record.kind }}"
+        domain = "{{ record.domain }}"
+        answer = [{% for ans in record.answer %}"{{ ans }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+
+{% endfor %}
+{% endif %}
+{# Web URLs #}
+{% if check.urls is defined %}
+{% for url in check.urls %}
+        [[box.web.url]]
+{% if url.path is defined %}
+        path = "{{ url.path }}"
+{% endif %}
+{% if url.status is defined %}
+        status = {{ url.status }}
+{% endif %}
+{% if url.regex is defined %}
+        regex = "{{ url.regex }}"
+{% endif %}
+
+{% endfor %}
+{% endif %}
+{# SSH/WinRM Commands #}
+{% if check.commands is defined %}
+{% for cmd in check.commands %}
+        [[box.{{ check.type }}.command]]
+        command = "{{ cmd.command }}"
+{% if cmd.output is defined %}
+        output = "{{ cmd.output }}"
+{% endif %}
+{% if cmd.contains is defined %}
+        contains = {{ cmd.contains | lower }}
+{% endif %}
+{% if cmd.useregex is defined %}
+        useregex = {{ cmd.useregex | lower }}
+{% endif %}
+
+{% endfor %}
+{% endif %}
+{# SQL Queries #}
+{% if check.queries is defined %}
+{% for query in check.queries %}
+        [[box.sql.query]]
+{% if query.database is defined %}
+        database = "{{ query.database }}"
+{% endif %}
+{% if query.table is defined %}
+        table = "{{ query.table }}"
+{% endif %}
+{% if query.column is defined %}
+        column = "{{ query.column }}"
+{% endif %}
+{% if query.output is defined %}
+        output = "{{ query.output }}"
+{% endif %}
+{% if query.contains is defined %}
+        contains = {{ query.contains | lower }}
+{% endif %}
+{% if query.databaseexists is defined %}
+        databaseexists = {{ query.databaseexists | lower }}
+{% endif %}
+
+{% endfor %}
+{% endif %}
+{# FTP/SMB Files #}
+{% if check.files is defined %}
+{% for file in check.files %}
+        [[box.{{ check.type }}.file]]
+        name = "{{ file.name }}"
+{% if file.hash is defined %}
+        hash = "{{ file.hash }}"
+{% endif %}
+{% if file.regex is defined %}
+        regex = "{{ file.regex }}"
+{% endif %}
+
+{% endfor %}
+{% endif %}
+{% endfor %}
+{% endfor %}
