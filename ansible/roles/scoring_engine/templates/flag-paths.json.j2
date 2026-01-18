@@ -1,0 +1,62 @@
+{#
+==============================================================================
+FLAG PATHS CONFIGURATION - JINJA2 TEMPLATE
+==============================================================================
+
+WHAT IS THIS FILE?
+This Jinja2 template generates a JSON configuration file that tells the flag
+counter script where to look for planted flags on each box.
+
+WHAT IS JSON?
+JSON (JavaScript Object Notation) is a simple text format for storing data.
+It's used everywhere in modern software because it's easy for both humans
+and computers to read. JSON doesn't support comments, so we put our
+documentation here in the Jinja2 template section instead.
+
+JSON BASICS:
+- Objects use curly braces: { "key": "value" }
+- Arrays use square brackets: ["item1", "item2"]
+- Strings must use double quotes: "hello" (not 'hello')
+- No trailing commas allowed: {"a": 1, "b": 2} (not {"a": 1, "b": 2,})
+
+WHAT IS JINJA2?
+Jinja2 is a templating language. The stuff between {# #} is a comment.
+The stuff between {{ }} gets replaced with variable values.
+The stuff between {% %} is control logic (if statements, loops).
+
+HOW THIS TEMPLATE WORKS:
+1. Ansible reads this template
+2. It loops through scoring_boxes (defined in group_vars/scoring.yml)
+3. For each box that has a flag_path defined, it adds an entry
+4. The result is a JSON file like:
+   {
+     "filename": "flag.txt",
+     "paths": {
+       "webserver": "/var/www/html",
+       "database": "/var/lib/mysql"
+     }
+   }
+
+WHY GENERATE THIS FILE?
+The flag counter script (check_flag_count.py) needs to know where to search
+for flags. Instead of hardcoding paths in the script, we generate this
+config file from the same source of truth (scoring_boxes) used elsewhere.
+This keeps everything in sync!
+#}
+{
+  "_comment": "{{ ansible_managed | regex_replace('\"', '\\\"') }}",
+  "filename": "{{ scoring_flag_filename }}",
+  "paths": {
+{#
+Loop through all boxes defined in scoring_boxes.
+Only include boxes that have a flag_path defined.
+The loop.last check prevents a trailing comma (invalid JSON).
+#}
+{% for box in scoring_boxes %}
+{% if box.flag_path is defined %}
+    "{{ box.name }}": "{{ box.flag_path }}"{% if not loop.last %},{% endif %}
+
+{% endif %}
+{% endfor %}
+  }
+}
