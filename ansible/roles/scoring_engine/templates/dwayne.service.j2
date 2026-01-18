@@ -1,0 +1,113 @@
+# {{ ansible_managed }}
+# ==============================================================================
+# SYSTEMD SERVICE UNIT FOR DWAYNE-INATOR-5000 SCORING ENGINE
+# ==============================================================================
+# This file tells systemd (Linux's service manager) how to run the scoring engine.
+#
+# WHAT IS SYSTEMD?
+# Systemd is the system and service manager for most modern Linux distributions.
+# It handles starting services at boot, managing dependencies, and restarting
+# crashed services. Think of it as the "control center" for background processes.
+#
+# SERVICE UNIT FILES:
+# Files like this one (ending in .service) define how to run a program as a
+# service. They go in /etc/systemd/system/ for custom services.
+#
+# USEFUL COMMANDS:
+#   systemctl start dwayne-inator    # Start the service
+#   systemctl stop dwayne-inator     # Stop the service
+#   systemctl restart dwayne-inator  # Restart the service
+#   systemctl status dwayne-inator   # Check if it's running
+#   systemctl enable dwayne-inator   # Start automatically on boot
+#   journalctl -fu dwayne-inator     # View logs (f=follow, u=unit)
+#
+# JINJA2 TEMPLATE:
+# This is a Jinja2 template (notice the .j2 extension). Ansible replaces
+# {{ variable }} with actual values before copying to the server.
+#
+# DOCUMENTATION:
+# - Systemd Service Units: https://www.freedesktop.org/software/systemd/man/systemd.service.html
+# - Jinja2 Templates: https://jinja.palletsprojects.com/
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# [Unit] Section - Metadata and Dependencies
+# ------------------------------------------------------------------------------
+# Describes the service and when it should start
+
+[Unit]
+# Human-readable description (shown in systemctl status output)
+Description=DWAYNE-INATOR-5000 Scoring Engine
+
+# Link to documentation for administrators
+Documentation=https://github.com/DSU-DefSec/DWAYNE-INATOR-5000
+
+# Start this service AFTER the network is available
+# (The scoring engine needs network access to check services)
+After=network.target
+
+# ------------------------------------------------------------------------------
+# [Service] Section - How to Run the Program
+# ------------------------------------------------------------------------------
+# Defines the actual command and runtime behavior
+
+[Service]
+# Type=simple means: the process started by ExecStart IS the service
+# (as opposed to Type=forking where it forks into background)
+Type=simple
+
+# Which Linux user runs this service
+# Using root for simplicity, but production systems might use a dedicated user
+User={{ scoring_service_user }}
+
+# Working directory - where the service runs from
+# Important because the scoring engine looks for dwayne.conf here
+WorkingDirectory={{ scoring_install_dir }}
+
+# The actual command to start the scoring engine
+ExecStart={{ scoring_install_dir }}/{{ scoring_binary_name }}
+
+# Restart policy: restart if the process crashes (exits with error)
+# Alternatives: always, no, on-success, on-abort
+Restart=on-failure
+
+# Wait 5 seconds before restarting (prevents rapid restart loops)
+RestartSec=5
+
+# ------------------------------------------------------------------------------
+# Logging Configuration
+# ------------------------------------------------------------------------------
+# Send all output to systemd's journal (viewable with journalctl)
+
+StandardOutput=journal
+StandardError=journal
+
+# Identifier used in log entries (defaults to service name)
+SyslogIdentifier={{ scoring_service_name }}
+
+# ------------------------------------------------------------------------------
+# Security Hardening
+# ------------------------------------------------------------------------------
+# These options limit what the service can do, reducing damage if compromised
+
+# Prevent the service from gaining new privileges
+NoNewPrivileges=true
+
+# Make the filesystem read-only except for specific paths
+ProtectSystem=strict
+
+# Allow writing to the scoring engine directory (for database, logs)
+ReadWritePaths={{ scoring_install_dir }}
+
+# Give the service its own private /tmp directory
+PrivateTmp=true
+
+# ------------------------------------------------------------------------------
+# [Install] Section - When to Enable the Service
+# ------------------------------------------------------------------------------
+# Defines which "target" (system state) should include this service
+
+[Install]
+# multi-user.target = normal system operation (like runlevel 3)
+# This means: enable this service when the system boots to multi-user mode
+WantedBy=multi-user.target
