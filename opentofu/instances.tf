@@ -4,11 +4,21 @@
 # This file creates the virtual machines in OpenStack.
 # It also assigns floating IPs so you can access them from outside.
 #
-# WHAT GETS CREATED:
-# 1. Windows VMs (for Domain Controller and member servers)
-# 2. Linux VMs (for web servers, databases, workstations, etc.)
-# 3. Floating IPs for each VM (public IP addresses)
-# 4. Associations linking floating IPs to VMs
+# MULTI-PROJECT CTF ARCHITECTURE:
+# VMs are deployed to different OpenStack projects based on their role:
+#
+#   MAIN PROJECT (Grey Team):
+#   - Scoring servers (monitor Blue Team services)
+#
+#   BLUE PROJECT (Defenders):
+#   - Windows Domain Controller (first Windows VM)
+#   - Windows member servers
+#   - Linux servers (web, database, etc.)
+#
+#   RED PROJECT (Attackers):
+#   - Kali Linux attack machines
+#
+# All VMs connect to the SAME network (shared via RBAC) so Red can attack Blue!
 #
 # DOCUMENTATION:
 # - Compute Instance: https://registry.terraform.io/providers/terraform-provider-openstack/openstack/latest/docs/resources/compute_instance_v2
@@ -17,174 +27,128 @@
 #
 # ==============================================================================
 
-# ------------------------------------------------------------------------------
-# DATA SOURCES: LOOK UP OS IMAGES
-# ------------------------------------------------------------------------------
-# These data sources find the image IDs for Windows and Linux.
-# We need the image ID to create VMs from that image.
-#
-# DATA SOURCE EXPLAINED:
-# - Queries OpenStack to find existing resources
-# - Does NOT create anything
-# - Returns information we can use elsewhere
-#
-# Documentation: https://registry.terraform.io/providers/terraform-provider-openstack/openstack/latest/docs/data-sources/images_image_v2
+
+# ##############################################################################
+#                         IMAGE DATA SOURCES
+# ##############################################################################
+# These data sources find the image IDs for each OS type.
+# Images must exist in OpenStack before you can use them.
 
 data "openstack_images_image_v2" "windows" {
   name        = var.windows_image_name    # "WindowsServer2022"
-  most_recent = true                       # If multiple versions, use newest
+  most_recent = true
   # Returns: data.openstack_images_image_v2.windows.id
 }
 
 data "openstack_images_image_v2" "debian" {
   name        = var.debian_image_name     # "Ubuntu2404Desktop"
   most_recent = true
-  # Returns: data.openstack_images_image_v2.debian.id
+  # Used for Blue Team Linux servers
 }
 
-# ==============================================================================
-# WINDOWS VIRTUAL MACHINES
-# ==============================================================================
-# Creates Windows Server VMs for your domain infrastructure.
-# The FIRST Windows VM becomes the Domain Controller (in Ansible).
-#
-# Documentation: https://registry.terraform.io/providers/terraform-provider-openstack/openstack/latest/docs/resources/compute_instance_v2
+data "openstack_images_image_v2" "scoring" {
+  name        = var.scoring_image_name    # "Ubuntu2404Desktop"
+  most_recent = true
+  # Used for scoring/Grey Team servers
+}
 
-resource "openstack_compute_instance_v2" "windows" {
-  # --------------------------------------------------------------------------
-  # COUNT - CREATE MULTIPLE VMS
-  # --------------------------------------------------------------------------
-  count = var.windows_count
-  # count = 3 creates 3 identical VMs
-  # Each VM is accessed via: openstack_compute_instance_v2.windows[0], [1], [2]
-  # count.index gives the current index (0, 1, 2)
+data "openstack_images_image_v2" "kali" {
+  name        = var.kali_image_name       # "kali-2024"
+  most_recent = true
+  # Used for Red Team attack VMs
+  #
+  # KALI LINUX:
+  # Pre-loaded with penetration testing tools:
+  # - Nmap, Metasploit, Burp Suite, Wireshark
+  # - Password crackers, exploit frameworks
+  # - Perfect for Red Team operations!
+}
 
-  # --------------------------------------------------------------------------
-  # VM NAME - CONDITIONAL LOGIC
-  # --------------------------------------------------------------------------
-  name = length(var.windows_hostnames) > count.index ? var.windows_hostnames[count.index] : "cdt-win-${count.index + 1}"
-  # This is a conditional expression (ternary operator):
-  #   condition ? value_if_true : value_if_false
-  #
-  # EXPLAINED:
-  # - length(var.windows_hostnames) = how many custom names provided
-  # - count.index = current VM index (0, 1, 2, ...)
-  # - If custom name exists for this index, use it
-  # - Otherwise, generate name like "cdt-win-1", "cdt-win-2"
-  #
-  # EXAMPLE:
-  #   windows_count = 3, windows_hostnames = ["dc01", "fileserver"]
+
+# ##############################################################################
+#                         BLUE TEAM WINDOWS VMS
+# ##############################################################################
+# Windows VMs for Blue Team to defend. The FIRST VM becomes the Domain Controller.
+# These live in the BLUE project.
+
+resource "openstack_compute_instance_v2" "blue_windows" {
+  provider = openstack.blue
+  # PROVIDER EXPLAINED:
+  # This VM is created in the Blue Team's OpenStack project.
+  # Blue Team members can see and manage it in their dashboard.
+  # Red Team CANNOT see this VM in their dashboard - only network traffic!
+
+  count = var.blue_windows_count
+  # count = 2 creates: blue_windows[0] (DC), blue_windows[1] (member)
+
+  name = length(var.blue_windows_hostnames) > count.index ? var.blue_windows_hostnames[count.index] : "blue-win-${count.index + 1}"
+  # CONDITIONAL NAMING:
+  # If custom hostname provided, use it; otherwise auto-generate
+  # Example: hostnames = ["dc01"] with count = 2
   #   VM 0: "dc01" (custom)
-  #   VM 1: "fileserver" (custom)
-  #   VM 2: "cdt-win-3" (auto-generated)
+  #   VM 1: "blue-win-2" (auto)
 
-  # --------------------------------------------------------------------------
-  # VM CONFIGURATION
-  # --------------------------------------------------------------------------
-  image_name  = var.windows_image_name
-  # The OS image to boot from (Windows Server 2022)
+  image_name      = var.windows_image_name
+  flavor_name     = var.flavor_name
+  key_pair        = var.keypair
+  security_groups = [openstack_networking_secgroup_v2.blue_windows_sg.name]
+  # Uses Blue Team Windows security group (WinRM, RDP)
 
-  flavor_name = var.flavor_name
-  # VM size (CPU, RAM) - "medium" = 2 vCPU, 4GB RAM
-
-  key_pair    = var.keypair
-  # SSH key for initial access (also used by cloud-init on Windows)
-  # IMPORTANT: Must match a keypair you uploaded to OpenStack
-
-  security_groups = [openstack_networking_secgroup_v2.windows_sg.name]
-  # Firewall rules applied to this VM
-  # windows_sg allows WinRM (5985/5986) and RDP (3389)
-
-  # --------------------------------------------------------------------------
-  # NETWORK CONFIGURATION
-  # --------------------------------------------------------------------------
   network {
     uuid        = openstack_networking_network_v2.cdt_net.id
-    # Connect to our private network
-
+    # Connects to the shared network (owned by main, shared via RBAC)
     fixed_ip_v4 = "10.10.10.2${count.index + 1}"
-    # Assign a specific IP address
-    # String interpolation: "10.10.10.2" + (index + 1)
-    # Results: 10.10.10.21, 10.10.10.22, 10.10.10.23, etc.
-    #
-    # WHY FIXED IPS:
-    # - Predictable addressing for Ansible inventory
-    # - Easy to remember which IP is which server
-    # - Required for domain join and DNS configuration
+    # Blue Windows IPs: 10.10.10.21, 10.10.10.22, 10.10.10.23...
+    # IP SCHEME:
+    #   10.10.10.1x = Scoring (Grey Team)
+    #   10.10.10.2x = Blue Windows
+    #   10.10.10.3x = Blue Linux
+    #   10.10.10.4x = Red Team Kali
   }
 
-  # --------------------------------------------------------------------------
-  # BOOT VOLUME (DISK)
-  # --------------------------------------------------------------------------
   block_device {
     uuid                  = data.openstack_images_image_v2.windows.id
-    # The Windows image to use
-
     source_type           = "image"
-    # Boot from an image (vs. existing volume or snapshot)
-
     volume_size           = 80
-    # Disk size in GB (Windows needs at least 40GB, 80GB recommended)
-
     destination_type      = "volume"
-    # Create a Cinder volume (persistent storage)
-    # Alternative: "local" for ephemeral storage (lost if VM deleted)
-
     delete_on_termination = true
-    # Delete the volume when VM is destroyed
-    # Set to false if you want to keep the disk after destroying VM
   }
 
-  # --------------------------------------------------------------------------
-  # USER DATA (CLOUD-INIT SCRIPT)
-  # --------------------------------------------------------------------------
   user_data = file("${path.module}/windows-userdata.ps1")
-  # Script that runs on first boot
-  # For Windows: PowerShell script that enables WinRM for Ansible
-  #
-  # file() function reads the file contents
-  # ${path.module} = directory containing this .tf file
-  #
-  # WHAT THE SCRIPT DOES:
-  # 1. Enables WinRM (Windows Remote Management)
-  # 2. Configures firewall for WinRM
-  # 3. Sets up authentication for Ansible
+  # PowerShell script that enables WinRM for Ansible management
 
-  # --------------------------------------------------------------------------
-  # DEPENDENCIES
-  # --------------------------------------------------------------------------
   depends_on = [
-    # List resources that must exist before creating this VM
-    # Currently empty - OpenTofu figures out dependencies automatically
-    # Add explicit dependencies if you have ordering requirements
+    openstack_networking_rbac_policy_v2.share_with_blue
+    # DEPENDENCY EXPLAINED:
+    # The network must be shared with Blue project BEFORE creating VMs
+    # Otherwise, Blue project VMs can't connect to the network!
   ]
 }
 
-# ==============================================================================
-# LINUX VIRTUAL MACHINES
-# ==============================================================================
-# Creates Linux VMs for web servers, databases, workstations, etc.
-# These will join the Windows domain via Ansible.
-#
-# Documentation: https://registry.terraform.io/providers/terraform-provider-openstack/openstack/latest/docs/resources/compute_instance_v2
 
-resource "openstack_compute_instance_v2" "debian" {
-  count = var.debian_count
+# ##############################################################################
+#                         BLUE TEAM LINUX VMS
+# ##############################################################################
+# Linux VMs for Blue Team to defend (web servers, databases, etc.)
+# These join the Windows domain via Ansible.
 
-  # Hostname with same conditional logic as Windows
-  name = length(var.debian_hostnames) > count.index ? var.debian_hostnames[count.index] : "cdt-debian-${count.index + 1}"
+resource "openstack_compute_instance_v2" "blue_linux" {
+  provider = openstack.blue
+
+  count = var.blue_linux_count
+
+  name = length(var.blue_linux_hostnames) > count.index ? var.blue_linux_hostnames[count.index] : "blue-linux-${count.index + 1}"
 
   image_name      = var.debian_image_name
   flavor_name     = var.flavor_name
   key_pair        = var.keypair
-  security_groups = [openstack_networking_secgroup_v2.linux_sg.name]
-  # linux_sg allows SSH (22) and RDP (3389 for xRDP)
+  security_groups = [openstack_networking_secgroup_v2.blue_linux_sg.name]
+  # Uses Blue Team Linux security group (SSH, RDP)
 
   network {
     uuid        = openstack_networking_network_v2.cdt_net.id
     fixed_ip_v4 = "10.10.10.3${count.index + 1}"
-    # Linux IPs: 10.10.10.31, 10.10.10.32, 10.10.10.33, etc.
-    # Different range than Windows (10.10.10.2x) for easy identification
+    # Blue Linux IPs: 10.10.10.31, 10.10.10.32, 10.10.10.33...
   }
 
   block_device {
@@ -196,144 +160,243 @@ resource "openstack_compute_instance_v2" "debian" {
   }
 
   user_data = file("${path.module}/debian-userdata.yaml")
-  # Cloud-init YAML file for Linux
-  # Sets up the cyberrange user with password authentication
-  # Format: cloud-config YAML (different from Windows PowerShell)
+  # Cloud-init YAML that sets up the cyberrange user
+
+  depends_on = [
+    openstack_networking_rbac_policy_v2.share_with_blue
+  ]
+}
+
+
+# ##############################################################################
+#                         SCORING VMS (Grey Team)
+# ##############################################################################
+# Scoring servers that monitor Blue Team services and calculate scores.
+# These live in the MAIN project and are managed by Grey Team.
+
+resource "openstack_compute_instance_v2" "scoring" {
+  provider = openstack.main
+
+  count = var.scoring_count
+
+  name            = "scoring-${count.index + 1}"
+  image_name      = var.scoring_image_name
+  flavor_name     = var.flavor_name
+  key_pair        = var.keypair
+  security_groups = [openstack_networking_secgroup_v2.scoring_sg.name]
+
+  network {
+    uuid        = openstack_networking_network_v2.cdt_net.id
+    fixed_ip_v4 = "10.10.10.1${count.index + 1}"
+    # Scoring IPs: 10.10.10.11, 10.10.10.12...
+  }
+
+  block_device {
+    uuid                  = data.openstack_images_image_v2.scoring.id
+    source_type           = "image"
+    volume_size           = 80
+    destination_type      = "volume"
+    delete_on_termination = true
+  }
+
+  user_data = file("${path.module}/debian-userdata.yaml")
+
+  # SCORING ENGINE:
+  # This VM runs the scoring software that:
+  # 1. Periodically checks if Blue Team services are up (HTTP, SSH, etc.)
+  # 2. Awards points for uptime
+  # 3. Displays scoreboard for all teams
+  #
+  # Popular scoring engines:
+  # - ScoringEngine (https://github.com/scoringengine/scoringengine)
+  # - Aeolus (used by National CCDC)
+  # - Custom solutions
 
   depends_on = []
 }
 
-# ==============================================================================
-# FLOATING IPS
-# ==============================================================================
-# Floating IPs are public IP addresses that let you access VMs from outside.
-# They come from the external network (MAIN-NAT) pool.
-#
-# HOW FLOATING IPS WORK:
-# 1. OpenStack allocates an IP from the external pool (100.65.x.x)
-# 2. You associate that IP with a VM's port
-# 3. Traffic to the floating IP gets routed to your VM
-# 4. You access the VM through the jump host using this IP
-#
-# Documentation: https://registry.terraform.io/providers/terraform-provider-openstack/openstack/latest/docs/resources/networking_floatingip_v2
 
-resource "openstack_networking_floatingip_v2" "win_fip" {
-  count = var.windows_count
-  pool  = var.external_network    # "MAIN-NAT"
-  # Creates one floating IP per Windows VM
-  # Access via: openstack_networking_floatingip_v2.win_fip[0].address
+# ##############################################################################
+#                         RED TEAM KALI VMS
+# ##############################################################################
+# Kali Linux attack VMs for Red Team. Used to compromise Blue Team infrastructure.
+# These live in the RED project.
+
+resource "openstack_compute_instance_v2" "red_kali" {
+  provider = openstack.red
+
+  count = var.red_kali_count
+
+  name            = "red-kali-${count.index + 1}"
+  image_name      = var.kali_image_name
+  flavor_name     = var.flavor_name
+  key_pair        = var.keypair
+  security_groups = [openstack_networking_secgroup_v2.red_linux_sg.name]
+
+  network {
+    uuid        = openstack_networking_network_v2.cdt_net.id
+    fixed_ip_v4 = "10.10.10.4${count.index + 1}"
+    # Red Team IPs: 10.10.10.41, 10.10.10.42...
+  }
+
+  block_device {
+    uuid                  = data.openstack_images_image_v2.kali.id
+    source_type           = "image"
+    volume_size           = 80
+    destination_type      = "volume"
+    delete_on_termination = true
+  }
+
+  user_data = file("${path.module}/debian-userdata.yaml")
+  # Kali uses the same cloud-init as other Linux VMs
+
+  depends_on = [
+    openstack_networking_rbac_policy_v2.share_with_red
+    # Network must be shared with Red project first
+  ]
+
+  # RED TEAM ATTACK WORKFLOW:
+  # 1. Log into Kali VM via SSH or RDP
+  # 2. Scan Blue Team IPs: nmap -sV 10.10.10.21-39
+  # 3. Find vulnerable services
+  # 4. Exploit and gain access
+  # 5. Capture flags, maintain persistence
+  #
+  # Blue Team should be monitoring for these attacks!
 }
 
-resource "openstack_networking_floatingip_v2" "debian_fip" {
-  count = var.debian_count
-  pool  = var.external_network
-  # Creates one floating IP per Linux VM
+
+# ##############################################################################
+#                         FLOATING IPS (Public Access)
+# ##############################################################################
+# Floating IPs are public addresses that let you access VMs from outside.
+# Each team's VMs get floating IPs from their respective project's quota.
+
+# Blue Team Windows floating IPs
+resource "openstack_networking_floatingip_v2" "blue_win_fip" {
+  provider = openstack.blue
+  count    = var.blue_windows_count
+  pool     = var.external_network
 }
 
-# ==============================================================================
-# DATA SOURCES: VM NETWORK PORTS
-# ==============================================================================
-# To associate a floating IP with a VM, we need the VM's network port ID.
-# A "port" is the VM's connection point to the network.
-#
-# Documentation: https://registry.terraform.io/providers/terraform-provider-openstack/openstack/latest/docs/data-sources/networking_port_v2
+# Blue Team Linux floating IPs
+resource "openstack_networking_floatingip_v2" "blue_linux_fip" {
+  provider = openstack.blue
+  count    = var.blue_linux_count
+  pool     = var.external_network
+}
 
-data "openstack_networking_port_v2" "win_port" {
-  count      = var.windows_count
-  device_id  = openstack_compute_instance_v2.windows[count.index].id
-  # Find the port belonging to this specific VM
+# Scoring server floating IPs
+resource "openstack_networking_floatingip_v2" "scoring_fip" {
+  provider = openstack.main
+  count    = var.scoring_count
+  pool     = var.external_network
+}
 
+# Red Team floating IPs
+resource "openstack_networking_floatingip_v2" "red_fip" {
+  provider = openstack.red
+  count    = var.red_kali_count
+  pool     = var.external_network
+}
+
+
+# ##############################################################################
+#                         PORT DATA SOURCES
+# ##############################################################################
+# To associate floating IPs with VMs, we need each VM's network port ID.
+
+data "openstack_networking_port_v2" "blue_win_port" {
+  provider   = openstack.blue
+  count      = var.blue_windows_count
+  device_id  = openstack_compute_instance_v2.blue_windows[count.index].id
   network_id = openstack_networking_network_v2.cdt_net.id
-  # On this specific network
 }
 
-data "openstack_networking_port_v2" "debian_port" {
-  count      = var.debian_count
-  device_id  = openstack_compute_instance_v2.debian[count.index].id
+data "openstack_networking_port_v2" "blue_linux_port" {
+  provider   = openstack.blue
+  count      = var.blue_linux_count
+  device_id  = openstack_compute_instance_v2.blue_linux[count.index].id
   network_id = openstack_networking_network_v2.cdt_net.id
 }
 
-# ==============================================================================
-# FLOATING IP ASSOCIATIONS
-# ==============================================================================
-# Links each floating IP to its VM's network port.
-# After this, traffic to the floating IP reaches the VM.
-#
-# Documentation: https://registry.terraform.io/providers/terraform-provider-openstack/openstack/latest/docs/resources/networking_floatingip_associate_v2
-
-resource "openstack_networking_floatingip_associate_v2" "win_fip_assoc" {
-  count       = var.windows_count
-  floating_ip = openstack_networking_floatingip_v2.win_fip[count.index].address
-  # The public IP address (e.g., 100.65.4.55)
-
-  port_id     = data.openstack_networking_port_v2.win_port[count.index].id
-  # The VM's network port to attach it to
+data "openstack_networking_port_v2" "scoring_port" {
+  provider   = openstack.main
+  count      = var.scoring_count
+  device_id  = openstack_compute_instance_v2.scoring[count.index].id
+  network_id = openstack_networking_network_v2.cdt_net.id
 }
 
-resource "openstack_networking_floatingip_associate_v2" "debian_fip_assoc" {
-  count       = var.debian_count
-  floating_ip = openstack_networking_floatingip_v2.debian_fip[count.index].address
-  port_id     = data.openstack_networking_port_v2.debian_port[count.index].id
+data "openstack_networking_port_v2" "red_port" {
+  provider   = openstack.red
+  count      = var.red_kali_count
+  device_id  = openstack_compute_instance_v2.red_kali[count.index].id
+  network_id = openstack_networking_network_v2.cdt_net.id
 }
 
+
+# ##############################################################################
+#                         FLOATING IP ASSOCIATIONS
+# ##############################################################################
+# Links floating IPs to VM ports so external traffic reaches the VMs.
+
+resource "openstack_networking_floatingip_associate_v2" "blue_win_fip_assoc" {
+  provider    = openstack.blue
+  count       = var.blue_windows_count
+  floating_ip = openstack_networking_floatingip_v2.blue_win_fip[count.index].address
+  port_id     = data.openstack_networking_port_v2.blue_win_port[count.index].id
+}
+
+resource "openstack_networking_floatingip_associate_v2" "blue_linux_fip_assoc" {
+  provider    = openstack.blue
+  count       = var.blue_linux_count
+  floating_ip = openstack_networking_floatingip_v2.blue_linux_fip[count.index].address
+  port_id     = data.openstack_networking_port_v2.blue_linux_port[count.index].id
+}
+
+resource "openstack_networking_floatingip_associate_v2" "scoring_fip_assoc" {
+  provider    = openstack.main
+  count       = var.scoring_count
+  floating_ip = openstack_networking_floatingip_v2.scoring_fip[count.index].address
+  port_id     = data.openstack_networking_port_v2.scoring_port[count.index].id
+}
+
+resource "openstack_networking_floatingip_associate_v2" "red_fip_assoc" {
+  provider    = openstack.red
+  count       = var.red_kali_count
+  floating_ip = openstack_networking_floatingip_v2.red_fip[count.index].address
+  port_id     = data.openstack_networking_port_v2.red_port[count.index].id
+}
+
+
 # ==============================================================================
-# UNDERSTANDING COUNT AND INDEXING
+# IP ADDRESS SUMMARY
 # ==============================================================================
 #
-# When you use count, OpenTofu creates a list of resources:
+#   10.10.10.11-19  =  Scoring/Grey Team (main project)
+#   10.10.10.21-29  =  Blue Team Windows (blue project)
+#   10.10.10.31-39  =  Blue Team Linux (blue project)
+#   10.10.10.41-49  =  Red Team Kali (red project)
 #
-#   count = 3 creates:
-#   - openstack_compute_instance_v2.windows[0]
-#   - openstack_compute_instance_v2.windows[1]
-#   - openstack_compute_instance_v2.windows[2]
-#
-# Inside the resource, count.index gives the current position:
-#   - First VM: count.index = 0
-#   - Second VM: count.index = 1
-#   - Third VM: count.index = 2
-#
-# To reference a specific instance elsewhere:
-#   openstack_compute_instance_v2.windows[0].id      # First VM's ID
-#   openstack_compute_instance_v2.windows[*].id     # All VM IDs (splat)
+# All VMs share the same 10.10.10.0/24 network via RBAC sharing.
+# Each VM also gets a floating IP (100.65.x.x) for external access.
 #
 # ==============================================================================
-# ADDING NEW VM TYPES FOR YOUR COMPETITION
+# CTF ATTACK SCENARIO
 # ==============================================================================
 #
-# EXAMPLE: Adding Kali Linux attack machines for Red Team
+#   +-----------------+     Network Traffic     +-----------------+
+#   |   RED TEAM      |  ===================>   |   BLUE TEAM     |
+#   |   10.10.10.4x   |                         |   10.10.10.2x   |
+#   |   (Kali VMs)    |                         |   10.10.10.3x   |
+#   +-----------------+                         +-----------------+
+#           ^                                           |
+#           |              +-----------------+          |
+#           +--------------+   SCORING       +----------+
+#                          |   10.10.10.1x   |
+#                          |   (monitors)    |
+#                          +-----------------+
 #
-# data "openstack_images_image_v2" "kali" {
-#   name        = "kali-2024"
-#   most_recent = true
-# }
-#
-# resource "openstack_compute_instance_v2" "redteam" {
-#   count           = var.redteam_count
-#   name            = "red-attack-${count.index + 1}"
-#   image_name      = "kali-2024"
-#   flavor_name     = var.flavor_name
-#   key_pair        = var.keypair
-#   security_groups = [openstack_networking_secgroup_v2.linux_sg.name]
-#
-#   network {
-#     uuid        = openstack_networking_network_v2.redteam_net.id
-#     fixed_ip_v4 = "192.168.100.${count.index + 101}"
-#   }
-#
-#   block_device {
-#     uuid                  = data.openstack_images_image_v2.kali.id
-#     source_type           = "image"
-#     volume_size           = 80
-#     destination_type      = "volume"
-#     delete_on_termination = true
-#   }
-# }
-#
-# Don't forget:
-# 1. Add redteam_count variable to variables.tf
-# 2. Add redteam_net network to network.tf
-# 3. Add floating IPs and associations
-# 4. Add outputs to outputs.tf
-# 5. Update import-tofu-to-ansible.py to include new VMs
+# Red attacks Blue. Scoring monitors. Blue defends and keeps services up!
 #
 # ==============================================================================
