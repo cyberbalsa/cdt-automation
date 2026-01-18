@@ -1,0 +1,3 @@
+[submodule "scoring/DWAYNE-INATOR-5000"]
+	path = scoring/DWAYNE-INATOR-5000
+	url = https://github.com/DSU-DefSec/DWAYNE-INATOR-5000.git
