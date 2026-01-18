@@ -12,15 +12,40 @@ This is an educational Infrastructure as Code (IaC) project that deploys a compl
 1. **Infrastructure Provisioning (OpenTofu)**: Creates VMs, networks, floating IPs, and security groups
 2. **Configuration Management (Ansible)**: Configures domain services, joins machines to domain, creates users
 
+### Multi-Project Grey Team Architecture
+This infrastructure supports attack/defend CTF competitions using OpenStack's multi-project capabilities:
+
+**Three OpenStack Projects:**
+- **Main Project (Grey Team)**: Owns the network, runs scoring infrastructure
+- **Blue Project (Defenders)**: Blue Team VMs (Windows DC, members, Linux servers)
+- **Red Project (Attackers)**: Red Team Kali attack machines
+
+**RBAC Network Sharing:** The network lives in the main project and is shared with Blue and Red projects via RBAC policies. This allows all VMs to communicate on the same network (10.10.10.0/24) while maintaining project-level isolation for access control and quotas.
+
 ### Dynamic Inventory Generation
-The `import-tofu-to-ansible.py` script bridges OpenTofu and Ansible by reading `tofu output -json` and generating `ansible/inventory.ini`. This creates dynamic groups:
-- `[windows_dc]` - First Windows VM (always the domain controller)
-- `[windows_members]` - Remaining Windows VMs (domain members)
-- `[linux_members]` - All Linux VMs (domain members)
+The `import-tofu-to-ansible.py` script bridges OpenTofu and Ansible by reading `tofu output -json` and generating `ansible/inventory/production.ini`. This creates dynamic groups:
+
+**By Team:**
+- `[scoring]` - Grey Team scoring servers
+- `[blue_windows]` - Blue Team Windows VMs
+- `[blue_linux]` - Blue Team Linux VMs
+- `[red_team]` - Red Team Kali VMs
+
+**By Role:**
+- `[windows_dc]` - First Blue Windows VM (Domain Controller)
+- `[blue_windows_members]` - Blue Windows VMs except DC
+- `[blue_linux_members]` - Blue Linux VMs (join domain)
+
+**Hierarchies:**
+- `[windows:children]` - All Windows VMs (windows_dc + blue_windows_members)
+- `[blue_team:children]` - All Blue Team VMs (blue_windows + blue_linux)
+- `[linux_members:children]` - All Linux VMs (blue_linux + red_team + scoring)
 
 ### IP Address Scheme
-- **Windows VMs**: `10.10.10.21`, `10.10.10.22`, `10.10.10.23` (first VM is DC)
-- **Linux VMs**: `10.10.10.31`, `10.10.10.32`, `10.10.10.33`, `10.10.10.34`
+- **Scoring VMs**: `10.10.10.11`, `10.10.10.12`, etc. (main project)
+- **Blue Windows VMs**: `10.10.10.21`, `10.10.10.22`, `10.10.10.23` (first VM is DC)
+- **Blue Linux VMs**: `10.10.10.31`, `10.10.10.32`, `10.10.10.33`, `10.10.10.34`
+- **Red Kali VMs**: `10.10.10.41`, `10.10.10.42`, etc.
 - All VMs get floating IPs for external access via SSH jump host
 
 ### Network Access Pattern
@@ -169,14 +194,14 @@ python3 import-tofu-to-ansible.py opentofu ansible inventory/production.ini
 ## Important Behavioral Notes
 
 ### Custom Hostnames
-VM names can be customized via `windows_hostnames` and `debian_hostnames` list variables in `variables.tf`. The conditional logic in `instances.tf:12` and `instances.tf:37`:
+VM names can be customized via `blue_windows_hostnames` and `blue_linux_hostnames` list variables in `variables.tf`. The conditional logic in `instances.tf`:
 ```hcl
-name = length(var.windows_hostnames) > count.index ? var.windows_hostnames[count.index] : "cdt-win-${count.index + 1}"
+name = length(var.blue_windows_hostnames) > count.index ? var.blue_windows_hostnames[count.index] : "blue-win-${count.index + 1}"
 ```
-If the list is shorter than the count, remaining VMs use auto-generated names (e.g., `cdt-win-3`).
+If the list is shorter than the count, remaining VMs use auto-generated names (e.g., `blue-win-3`).
 
 ### Domain Controller Assignment
-The **first Windows VM** in the inventory is always the domain controller. This is determined by array order, not by IP or name. The `import-tofu-to-ansible.py` script creates the `[windows_dc]` group with `windows_names[0]`.
+The **first Blue Windows VM** in the inventory is always the domain controller. This is determined by array order, not by IP or name. The `import-tofu-to-ansible.py` script creates the `[windows_dc]` group with `blue_windows_names[0]`.
 
 ### Ansible Directory Structure
 The project follows standard Ansible best practices for easier collaboration:
@@ -281,8 +306,15 @@ All connections route through `sshjump@ssh.cyberrange.rit.edu` via SSH ProxyJump
 ### Changing VM Counts
 Edit `opentofu/variables.tf`:
 ```hcl
-variable "windows_count" { default = 5 }  # Change from 3 to 5
-variable "debian_count" { default = 6 }   # Change from 4 to 6
+# Scoring servers (Grey Team)
+variable "scoring_count" { default = 1 }
+
+# Blue Team VMs
+variable "blue_windows_count" { default = 3 }  # First becomes DC
+variable "blue_linux_count" { default = 4 }
+
+# Red Team VMs
+variable "red_kali_count" { default = 2 }
 ```
 Then:
 ```bash
@@ -321,8 +353,10 @@ cd .. && python3 import-tofu-to-ansible.py
 
 ### IP Address Constraints
 Fixed IPs are assigned via string interpolation in `instances.tf`:
-- Windows: `10.10.10.2${count.index + 1}` (21, 22, 23...)
-- Linux: `10.10.10.3${count.index + 1}` (31, 32, 33...)
+- Scoring: `10.10.10.1${count.index + 1}` (11, 12, 13...)
+- Blue Windows: `10.10.10.2${count.index + 1}` (21, 22, 23...)
+- Blue Linux: `10.10.10.3${count.index + 1}` (31, 32, 33...)
+- Red Kali: `10.10.10.4${count.index + 1}` (41, 42, 43...)
 
 To change the scheme, edit both the interpolation and the subnet CIDR in `variables.tf`.
 

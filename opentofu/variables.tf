@@ -118,7 +118,8 @@ variable "scoring_image_name" {
 variable "kali_image_name" {
   description = "Name of the Kali Linux image for Red Team"
   type        = string
-  default     = "kali-2024"
+  default     = "Kali2025"
+  # Run 'openstack image list' to see available images
 }
 
 # ------------------------------------------------------------------------------
