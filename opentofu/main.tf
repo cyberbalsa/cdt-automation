@@ -26,12 +26,36 @@ terraform {
 # - OS_APPLICATION_CREDENTIAL_ID
 # - OS_APPLICATION_CREDENTIAL_SECRET
 # - OS_REGION_NAME (optional)
-provider "openstack" {
-  auth_url = "https://openstack.cyberrange.rit.edu:5000/v3"
-  region   = "CyberRange"
 
-  # Credentials (ID and Secret) are automatically loaded from environment variables
-  # set by sourcing app-cred-openrc.sh
+# Default provider (main project) - used when no provider is specified
+provider "openstack" {
+  auth_url  = "https://openstack.cyberrange.rit.edu:5000/v3"
+  region    = "CyberRange"
+  tenant_id = var.main_project_id
+}
+
+# Aliased provider for main project (explicit usage)
+provider "openstack" {
+  alias     = "main"
+  auth_url  = "https://openstack.cyberrange.rit.edu:5000/v3"
+  region    = "CyberRange"
+  tenant_id = var.main_project_id
+}
+
+# Blue Team project provider
+provider "openstack" {
+  alias     = "blue"
+  auth_url  = "https://openstack.cyberrange.rit.edu:5000/v3"
+  region    = "CyberRange"
+  tenant_id = var.blue_project_id
+}
+
+# Red Team project provider
+provider "openstack" {
+  alias     = "red"
+  auth_url  = "https://openstack.cyberrange.rit.edu:5000/v3"
+  region    = "CyberRange"
+  tenant_id = var.red_project_id
 }
 
 # Validate that OpenStack credentials are loaded
