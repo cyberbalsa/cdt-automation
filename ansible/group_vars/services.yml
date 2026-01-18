@@ -1,0 +1,57 @@
+---
+# ==============================================================================
+# SERVICE CONFIGURATION
+# ==============================================================================
+# Default settings for optional CTF services.
+# These playbooks install services that DWAYNE-INATOR-5000 can score.
+#
+# USAGE:
+# 1. Add hosts to inventory groups: [web], [ftp], [mail], [sql], [vnc], [irc]
+# 2. Run: ansible-playbook playbooks/setup-<service>.yml
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# WEB SERVER (Apache)
+# ------------------------------------------------------------------------------
+web_document_root: "/var/www/html"
+web_server_name: "{{ inventory_hostname }}.{{ domain_name }}"
+web_enable_ssl: true
+
+# ------------------------------------------------------------------------------
+# FTP SERVER (vsftpd)
+# ------------------------------------------------------------------------------
+ftp_allow_anonymous: false
+ftp_local_enable: true
+ftp_write_enable: true
+ftp_chroot_local_user: false
+
+# ------------------------------------------------------------------------------
+# MAIL SERVER (Postfix + Dovecot)
+# ------------------------------------------------------------------------------
+mail_domain: "{{ domain_name }}"
+mail_hostname: "mail.{{ domain_name }}"
+
+# ------------------------------------------------------------------------------
+# SQL SERVER (MariaDB)
+# ------------------------------------------------------------------------------
+sql_bind_address: "0.0.0.0"
+sql_scoring_db: "scoring_test"
+sql_scoring_user: "scoring"
+sql_scoring_password: "ScoringDB123!"
+
+# ------------------------------------------------------------------------------
+# VNC SERVER (x11vnc)
+# ------------------------------------------------------------------------------
+vnc_password: "VncPass123!"
+vnc_display: ":0"
+vnc_port: 5900
+
+# ------------------------------------------------------------------------------
+# IRC SERVER (ngircd)
+# ------------------------------------------------------------------------------
+irc_server_name: "irc.{{ domain_name }}"
+irc_network_name: "CTFNet"
+irc_motd: "Welcome to the CTF IRC server!"
+irc_channel: "#ctf"
+irc_oper_name: "admin"
+irc_oper_password: "IrcAdmin123!"
