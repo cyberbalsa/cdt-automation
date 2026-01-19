@@ -22,6 +22,8 @@
   vars_files:
     - ../group_vars/all.yml
     - ../group_vars/scoring.yml
+    - ../group_vars/scoring_services.yml
+    - ../group_vars/scoring_overrides.yml
 
   pre_tasks:
     - name: Verify we have scoring configuration
@@ -31,8 +33,8 @@
           - scoring_admins | length > 0
           - scoring_teams is defined
           - scoring_teams | length > 0
-          - scoring_boxes is defined
-        fail_msg: "Scoring configuration missing. Check group_vars/scoring.yml"
+          - service_check_defaults is defined
+        fail_msg: "Scoring configuration missing. Check group_vars/scoring.yml and scoring_services.yml"
         success_msg: "Scoring configuration validated"
 
   roles:
