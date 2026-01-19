@@ -1,0 +1,82 @@
+---
+# ===========================================================================
+# SETUP IRC SERVER (ngircd)
+# ===========================================================================
+# Installs and configures ngircd IRC server.
+#
+# Target hosts: [irc] inventory group
+# Services: IRC (6667)
+# Authentication: Open (no authentication required)
+# ===========================================================================
+
+- name: Setup ngircd IRC Server
+  hosts: irc
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/services.yml
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # STEP 1: Install ngircd
+    # -------------------------------------------------------------------------
+    - name: Install ngircd
+      ansible.builtin.apt:
+        name: ngircd
+        state: present
+        update_cache: true
+
+    # -------------------------------------------------------------------------
+    # STEP 2: Configure ngircd
+    # -------------------------------------------------------------------------
+    - name: Configure ngircd
+      ansible.builtin.copy:
+        content: |
+          # ngircd configuration for CTF
+          [Global]
+          Name = {{ irc_server_name }}
+          Info = CTF IRC Server
+          Listen = 0.0.0.0
+          Ports = 6667
+          MotdPhrase = {{ irc_motd }}
+
+          [Limits]
+          MaxConnections = 100
+          MaxConnectionsIP = 10
+          MaxJoins = 10
+          MaxNickLength = 20
+
+          [Options]
+          AllowRemoteOper = no
+          OperCanUseMode = yes
+          PAM = no
+
+          [Operator]
+          Name = {{ irc_oper_name }}
+          Password = {{ irc_oper_password }}
+
+          [Channel]
+          Name = {{ irc_channel }}
+          Topic = Welcome to the CTF!
+          Modes = nt
+        dest: /etc/ngircd/ngircd.conf
+        owner: root
+        group: irc
+        mode: "0640"
+      notify: Restart ngircd
+
+    # -------------------------------------------------------------------------
+    # STEP 3: Start and enable ngircd
+    # -------------------------------------------------------------------------
+    - name: Enable and start ngircd service
+      ansible.builtin.service:
+        name: ngircd
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Restart ngircd
+      ansible.builtin.service:
+        name: ngircd
+        state: restarted

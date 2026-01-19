@@ -108,7 +108,9 @@
           - "  2. Create Domain Users (2-3 min)"
           - "  3. Join Windows Members (5-10 min each)"
           - "  4. Join Linux Members (5-10 min each)"
-          - "  5. Configure RDP (5 min)"
+          - "  5. Setup Services (web, ftp, mail, sql, vnc, irc)"
+          - "  6. Configure RDP (5 min)"
+          - "  7. Setup Scoring Engine"
           - ""
           - "Estimated Total Time: 30-45 minutes"
           - ""
@@ -150,7 +152,43 @@
   tags: ['linux', 'domain_join']
 
 # ==============================================================================
-# STEP 5: CONFIGURE REMOTE DESKTOP ACCESS
+# STEP 5: SETUP OPTIONAL SERVICES
+# ==============================================================================
+# These playbooks install services that DWAYNE-INATOR-5000 can score.
+# Each only runs if hosts are defined in the corresponding inventory group.
+
+- name: Setup Web Server (Apache)
+  import_playbook: setup-web.yml
+  when: groups['web'] is defined and groups['web'] | length > 0
+  tags: ['services', 'web']
+
+- name: Setup FTP Server (vsftpd)
+  import_playbook: setup-ftp.yml
+  when: groups['ftp'] is defined and groups['ftp'] | length > 0
+  tags: ['services', 'ftp']
+
+- name: Setup Mail Server (Postfix + Dovecot)
+  import_playbook: setup-mail.yml
+  when: groups['mail'] is defined and groups['mail'] | length > 0
+  tags: ['services', 'mail']
+
+- name: Setup SQL Server (MariaDB)
+  import_playbook: setup-sql.yml
+  when: groups['sql'] is defined and groups['sql'] | length > 0
+  tags: ['services', 'sql']
+
+- name: Setup VNC Server (x11vnc)
+  import_playbook: setup-vnc.yml
+  when: groups['vnc'] is defined and groups['vnc'] | length > 0
+  tags: ['services', 'vnc']
+
+- name: Setup IRC Server (ngircd)
+  import_playbook: setup-irc.yml
+  when: groups['irc'] is defined and groups['irc'] | length > 0
+  tags: ['services', 'irc']
+
+# ==============================================================================
+# STEP 6: CONFIGURE REMOTE DESKTOP ACCESS
 # ==============================================================================
 
 - name: Setup RDP on Windows Servers
@@ -162,7 +200,7 @@
   tags: ['rdp', 'xrdp', 'linux', 'remote_access']
 
 # ==============================================================================
-# STEP 6: SETUP SCORING ENGINE (Grey Team)
+# STEP 7: SETUP SCORING ENGINE (Grey Team)
 # ==============================================================================
 # Deploy the DWAYNE-INATOR-5000 scoring engine for attack/defend competitions
 
@@ -171,7 +209,7 @@
   tags: ['scoring', 'grey_team']
 
 # ==============================================================================
-# STEP 7: VALIDATE SCORING ENGINE
+# STEP 8: VALIDATE SCORING ENGINE
 # ==============================================================================
 # Verify all services are reporting as UP in the scoring engine
 # Waits up to 3 minutes for services to come online after deployment

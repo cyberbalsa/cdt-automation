@@ -241,55 +241,60 @@ With flags:
 
 This mirrors real-world scenarios where attackers want to maintain persistent access for data theft or espionage, not just cause destruction.
 
-### How It Works (Step by Step)
+### How It Works
+
+Flag checking uses the **built-in DWAYNE-INATOR-5000 check types** - no custom scripts required!
+
+- **Linux boxes**: SSH command checks run `cat /path/to/flag.txt` and validate the output contains the token
+- **Windows boxes**: SMB file checks read from Windows shares and validate content with regex
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
 │                    FLAG SYSTEM FLOW                              │
 ├─────────────────────────────────────────────────────────────────┤
 │                                                                  │
+│   GREY TEAM (Before Competition)                                 │
+│   ──────────────────────────────                                 │
+│   1. Set red_team_token in group_vars/scoring.yml               │
+│   2. Configure flag checks for each box                         │
+│   3. Distribute token to Red Team (secure channel)              │
+│                                                                  │
 │   RED TEAM                         SCORING SERVER                │
 │   ────────                         ──────────────                │
 │                                                                  │
-│   1. Get token ──────────────────► Token Server (port 8081)     │
-│      curl http://scoring:8081/token                             │
-│                                    Returns: "a1b2c3d4..."       │
+│   1. Receive token from Grey Team                               │
+│      (In-person briefing, sealed envelope, etc.)                │
 │                                                                  │
 │   2. Compromise a box                                           │
 │      (SSH, exploit, etc.)                                       │
 │                                                                  │
 │   3. Plant flag ────────────────►  Blue Team Box                │
-│      echo "a1b2c3d4" > /var/www/html/flag.txt                  │
+│      echo "REDTEAM-CTF-2026" > /var/www/html/flag.txt          │
 │                                                                  │
 │   4. Keep access (don't break it!)                              │
 │                                                                  │
-│                                    Every N rounds:              │
+│                                    Every scoring round:         │
 │                                    ┌─────────────────────┐      │
-│                                    │ Flag Checker Script │      │
+│                                    │ SSH/SMB Check       │      │
 │                                    └──────────┬──────────┘      │
 │                                               │                  │
 │                                    ┌──────────▼──────────┐      │
-│                                    │ Is service UP?      │      │
-│                                    └──────────┬──────────┘      │
-│                                               │                  │
-│                                    YES        │        NO       │
-│                                    ┌──────────▼──────────┐      │
-│                                    │ Search for flag.txt │      │
+│                                    │ Read flag file      │      │
 │                                    └──────────┬──────────┘      │
 │                                               │                  │
 │                              FOUND            │      NOT FOUND  │
 │                              ┌────────────────▼────────────┐    │
-│                              │ Does flag contain token?    │    │
+│                              │ Does content contain token? │    │
 │                              └────────────────┬────────────┘    │
 │                                               │                  │
 │                              YES              │             NO  │
-│                              ▼                ▼              ▼  │
-│                         FLAG_VALID      FLAG_NOT_FOUND  SERVICE_DOWN
-│                         (Red scores!)   (No points)     (No points)
+│                              ▼                ▼                 │
+│                         Check PASS       Check FAIL             │
+│                         (Red scores!)    (No points)            │
 │                                                                  │
 │   BLUE TEAM                                                      │
 │   ─────────                                                      │
-│   5. See "DETECTED_N" on scoreboard (N = number of flags)       │
+│   5. See flag checks on scoreboard                              │
 │   6. Hunt for flag files: find / -name "flag.txt"               │
 │   7. Remove enemy flags: rm /var/www/html/flag.txt              │
 │                                                                  │
@@ -298,51 +303,63 @@ This mirrors real-world scenarios where attackers want to maintain persistent ac
 
 ### Configuration
 
-Enable in `ansible/group_vars/scoring.yml`:
+Configure in `ansible/group_vars/scoring.yml`:
 
 ```yaml
-# Enable the flag system
-scoring_flags_enabled: true
-
-# Points per valid flag per check interval
-scoring_flag_points: 5
-
-# Check flags every N service rounds
-# (e.g., 5 = every 5 minutes if scoring_delay is 60 seconds)
-scoring_flag_check_interval: 5
-
-# What filename Red Team must use
-scoring_flag_filename: "flag.txt"
-
-# Port for token retrieval server
-scoring_red_token_port: 8081
+# Red team token for flag validation
+# This token must appear in flag files for Red Team to score points
+# Change this for each competition!
+red_team_token: "REDTEAM-CTF-2026"
 ```
 
-Add `flag_path` to each box you want to enable flags on:
+Add flag checks to boxes using SSH (Linux) or SMB (Windows):
 
+**Linux Flag Check (SSH):**
 ```yaml
 scoring_boxes:
   - name: "webserver"
     ip: "10.10.10.31"
-    flag_path: "/var/www/html"    # Where Red Team plants flags
     checks:
-      - type: web
-        urls:
-          - path: "/"
-            status: 200
-      # Add flag check - uses 'cmd' type to run our script
-      - type: cmd
-        display: "Flag"
-        command: "/opt/scoring-engine/checkfiles/check_flag.py --service webserver-web --path /var/www/html"
-        regex: "FLAG_VALID"
+      - type: ping
+      - type: ssh
+        credlists: ["linux_users"]
+
+      # Flag check - uses SSH to read the flag file
+      - type: ssh
+        display: "flag"
+        credlists: ["linux_users"]
+        commands:
+          - command: "cat /var/www/html/flag.txt 2>/dev/null || echo NOT_FOUND"
+            contains: true
+            output: "{{ red_team_token }}"
+```
+
+**Windows Flag Check (SMB):**
+```yaml
+scoring_boxes:
+  - name: "fileserver"
+    ip: "10.10.10.22"
+    checks:
+      - type: ping
+      - type: winrm
+        credlists: ["admins"]
+
+      # Flag check - uses SMB to read the flag file from a share
+      - type: smb
+        display: "flag"
+        credlists: ["admins"]
+        domain: "CDT.local"
+        file:
+          name: "C$/flags/flag.txt"     # UNC path: \\server\C$\flags\flag.txt
+          regex: "{{ red_team_token }}"
 ```
 
 ### Red Team Instructions
 
 ```bash
-# Step 1: Get your team's token from the scoring server
-TOKEN=$(curl -s http://<scoring-server>:8081/token)
-echo "My token is: $TOKEN"
+# Step 1: Get your token from Grey Team
+# (Provided during competition briefing - NOT available via network!)
+TOKEN="REDTEAM-CTF-2026"
 
 # Step 2: Compromise a target system (out of scope for this guide!)
 
@@ -356,9 +373,10 @@ cat /var/www/html/flag.txt
 #         notice and kick you out. Stealthy persistence is the goal.
 
 # Tips:
-# - Plant flags in subdirectories too: /var/www/html/images/flag.txt
-# - The checker searches recursively, so hidden flags still count
-# - If you break the service, you stop earning flag points!
+# - Check the scoring config to know WHERE to plant flags
+# - The flag must be in the exact path configured for each box
+# - If you break the service (SSH/SMB), you stop earning flag points!
+# - Be subtle - obvious flags are easy for Blue Team to find
 ```
 
 ### Blue Team Defense
@@ -367,8 +385,10 @@ cat /var/www/html/flag.txt
 # Hunt for enemy flags across the entire system
 find / -name "flag.txt" 2>/dev/null
 
-# Check common web directories
+# Check common locations
 ls -la /var/www/html/
+ls -la /home/
+ls -la /tmp/
 
 # Remove enemy flags when found
 rm /var/www/html/flag.txt
@@ -376,38 +396,39 @@ rm /var/www/html/flag.txt
 # Monitor for new files being created (requires inotify-tools)
 inotifywait -m -r /var/www/html -e create -e modify
 
-# Check the scoreboard for "DETECTED" alerts
-# The number tells you how many flags are planted (but not WHERE!)
+# Check the scoreboard for flag check results
+# A passing flag check means Red Team has access!
 ```
 
 ### Understanding the Scoreboard
 
-| Display | Meaning | Who It Helps |
-|---------|---------|--------------|
-| `Flag: FLAG_VALID` | Red has a valid flag planted | Red Team (they're scoring!) |
-| `Flag: SERVICE_DOWN` | Service failed, no flag check | Neither (both lose) |
-| `Flag: FLAG_NOT_FOUND` | Service up but no valid flag | Blue Team (they're clear) |
-| `DETECTED_3` | 3 flags planted somewhere | Blue Team (time to hunt!) |
-| `CLEAR` | No flags detected | Blue Team (all clear!) |
+Flag checks appear as regular service checks with the display name "flag":
+
+| Status | Meaning | Who It Helps |
+|--------|---------|--------------|
+| `flag: PASS` | Red has a valid flag planted | Red Team (they're scoring!) |
+| `flag: FAIL` | No valid flag found | Blue Team (they're clear or Red lost access) |
+| `flag: TIMEOUT` | SSH/SMB connection failed | Neither (service may be down) |
 
 ### Troubleshooting Flag Issues
 
 **Red Team: "My flag isn't scoring"**
-1. Is the service UP? Check the service check first
-2. Is your token correct? `curl http://scoring:8081/token`
-3. Is the flag in the right path? Check `flag_path` in config
-4. Is the file readable? Check permissions with `ls -la`
+1. Is the SSH/SMB service UP? Check the main service check first
+2. Is your token correct? It must match `red_team_token` exactly
+3. Is the flag in the exact path configured? Check the `command` or `file.name` in the config
+4. Is the file readable by the scoring credentials? Check permissions
 
-**Blue Team: "I removed the flag but it still shows DETECTED"**
-1. Flags are checked every N rounds, not instantly
-2. There might be flags on OTHER boxes
-3. Check ALL your systems, not just one
+**Blue Team: "Flag check is passing but I can't find the flag"**
+1. Check the exact path in the scoring config
+2. Look for hidden files: `ls -la`
+3. Check if it's in a subdirectory
+4. Verify you're on the right box
 
-**Grey Team: "Flag system not working"**
-1. Is `scoring_flags_enabled: true` in your config?
-2. Did you redeploy after enabling? `ansible-playbook playbooks/setup-scoring-engine.yml`
-3. Check token server: `curl http://localhost:8081/token`
-4. Check logs: `journalctl -fu red-token-server`
+**Grey Team: "Flag checks not working"**
+1. Can you manually SSH/SMB to the box with the scoring credentials?
+2. Is the token value correct in `group_vars/scoring.yml`?
+3. Did you redeploy after changing config? `ansible-playbook playbooks/setup-scoring-engine.yml`
+4. Check scoring engine logs: `journalctl -fu dwayne-inator`
 
 ## Learning More
 

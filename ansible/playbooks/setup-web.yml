@@ -1,0 +1,136 @@
+---
+# ===========================================================================
+# SETUP WEB SERVER (Apache)
+# ===========================================================================
+# Installs and configures Apache web server with HTTPS support.
+#
+# Target hosts: [web] inventory group
+# Services: HTTP (80), HTTPS (443)
+# ===========================================================================
+
+- name: Setup Apache Web Server
+  hosts: web
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/services.yml
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # STEP 1: Install Apache
+    # -------------------------------------------------------------------------
+    - name: Install Apache web server
+      ansible.builtin.apt:
+        name:
+          - apache2
+          - ssl-cert
+        state: present
+        update_cache: true
+
+    # -------------------------------------------------------------------------
+    # STEP 2: Enable required modules
+    # -------------------------------------------------------------------------
+    - name: Enable SSL module
+      ansible.builtin.command:
+        cmd: a2enmod ssl
+        creates: /etc/apache2/mods-enabled/ssl.load
+      notify: Restart Apache
+
+    # -------------------------------------------------------------------------
+    # STEP 3: Create document root
+    # -------------------------------------------------------------------------
+    - name: Ensure document root exists
+      ansible.builtin.file:
+        path: "{{ web_document_root }}"
+        state: directory
+        owner: www-data
+        group: www-data
+        mode: "0755"
+
+    # -------------------------------------------------------------------------
+    # STEP 4: Create test index page
+    # -------------------------------------------------------------------------
+    - name: Create test index.html
+      ansible.builtin.copy:
+        content: |
+          <!DOCTYPE html>
+          <html>
+          <head><title>{{ inventory_hostname }}</title></head>
+          <body>
+          <h1>Welcome to {{ inventory_hostname }}</h1>
+          <p>Apache is running on {{ ansible_fqdn | default(inventory_hostname) }}</p>
+          </body>
+          </html>
+        dest: "{{ web_document_root }}/index.html"
+        owner: www-data
+        group: www-data
+        mode: "0644"
+
+    # -------------------------------------------------------------------------
+    # STEP 5: Generate self-signed SSL certificate
+    # -------------------------------------------------------------------------
+    - name: Generate self-signed SSL certificate
+      ansible.builtin.command:
+        cmd: >
+          openssl req -x509 -nodes -days 365 -newkey rsa:2048
+          -keyout /etc/ssl/private/apache-selfsigned.key
+          -out /etc/ssl/certs/apache-selfsigned.crt
+          -subj "/C=US/ST=NY/L=Rochester/O=CTF/CN={{ web_server_name }}"
+        creates: /etc/ssl/certs/apache-selfsigned.crt
+      when: web_enable_ssl | default(true)
+
+    # -------------------------------------------------------------------------
+    # STEP 6: Configure SSL virtual host
+    # -------------------------------------------------------------------------
+    - name: Configure SSL virtual host
+      ansible.builtin.copy:
+        content: |
+          <VirtualHost *:443>
+              ServerName {{ web_server_name }}
+              DocumentRoot {{ web_document_root }}
+
+              SSLEngine on
+              SSLCertificateFile /etc/ssl/certs/apache-selfsigned.crt
+              SSLCertificateKeyFile /etc/ssl/private/apache-selfsigned.key
+
+              <Directory {{ web_document_root }}>
+                  Options Indexes FollowSymLinks
+                  AllowOverride All
+                  Require all granted
+              </Directory>
+
+              ErrorLog ${APACHE_LOG_DIR}/error.log
+              CustomLog ${APACHE_LOG_DIR}/access.log combined
+          </VirtualHost>
+        dest: /etc/apache2/sites-available/default-ssl.conf
+        owner: root
+        group: root
+        mode: "0644"
+      when: web_enable_ssl | default(true)
+      notify: Restart Apache
+
+    # -------------------------------------------------------------------------
+    # STEP 7: Enable sites
+    # -------------------------------------------------------------------------
+    - name: Enable default SSL site
+      ansible.builtin.command:
+        cmd: a2ensite default-ssl
+        creates: /etc/apache2/sites-enabled/default-ssl.conf
+      when: web_enable_ssl | default(true)
+      notify: Restart Apache
+
+    # -------------------------------------------------------------------------
+    # STEP 8: Start and enable Apache
+    # -------------------------------------------------------------------------
+    - name: Enable and start Apache service
+      ansible.builtin.service:
+        name: apache2
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Restart Apache
+      ansible.builtin.service:
+        name: apache2
+        state: restarted

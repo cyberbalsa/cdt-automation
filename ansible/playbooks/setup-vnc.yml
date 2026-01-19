@@ -1,0 +1,82 @@
+---
+# ===========================================================================
+# SETUP VNC SERVER (x11vnc)
+# ===========================================================================
+# Installs and configures x11vnc to share the X display.
+# Requires a desktop environment (LXQT from setup-rdp-linux.yml).
+#
+# Target hosts: [vnc] inventory group
+# Services: VNC (5900)
+# ===========================================================================
+
+- name: Setup x11vnc VNC Server
+  hosts: vnc
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/services.yml
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # STEP 1: Install x11vnc
+    # -------------------------------------------------------------------------
+    - name: Install x11vnc
+      ansible.builtin.apt:
+        name: x11vnc
+        state: present
+        update_cache: true
+
+    # -------------------------------------------------------------------------
+    # STEP 2: Create password file
+    # -------------------------------------------------------------------------
+    - name: Create VNC password file
+      ansible.builtin.command:
+        cmd: x11vnc -storepasswd "{{ vnc_password }}" /etc/x11vnc.pass
+        creates: /etc/x11vnc.pass
+
+    - name: Set password file permissions
+      ansible.builtin.file:
+        path: /etc/x11vnc.pass
+        owner: root
+        group: root
+        mode: "0644"
+
+    # -------------------------------------------------------------------------
+    # STEP 3: Create systemd service
+    # -------------------------------------------------------------------------
+    - name: Create x11vnc systemd service
+      ansible.builtin.copy:
+        content: |
+          [Unit]
+          Description=x11vnc VNC Server
+          After=display-manager.service network.target
+
+          [Service]
+          Type=simple
+          ExecStart=/usr/bin/x11vnc -display {{ vnc_display }} -forever -shared -rfbauth /etc/x11vnc.pass -rfbport {{ vnc_port }} -o /var/log/x11vnc.log
+          Restart=on-failure
+          RestartSec=5
+
+          [Install]
+          WantedBy=multi-user.target
+        dest: /etc/systemd/system/x11vnc.service
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Reload systemd
+
+    # -------------------------------------------------------------------------
+    # STEP 4: Enable and start x11vnc
+    # -------------------------------------------------------------------------
+    - name: Enable and start x11vnc service
+      ansible.builtin.service:
+        name: x11vnc
+        state: started
+        enabled: true
+      ignore_errors: true
+
+  handlers:
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true

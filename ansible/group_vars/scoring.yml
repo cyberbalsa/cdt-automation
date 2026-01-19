@@ -233,6 +233,15 @@ scoring_boxes:
             domain: "dc01.CDT.local"     # The name to look up
             answer: ["10.10.10.21"]      # Expected IP address(es)
 
+      # Flag check - validates Red Team flags via SMB
+      - type: smb
+        display: "flag"
+        credlists: ["admins"]
+        share: "C$"
+        files:
+          - name: "Users\\Public\\flag.txt"
+            regex: "{{ red_team_token }}"
+
   # --------------------------------------------------------------------------
   # WINDOWS MEMBER SERVER (blue-win-2)
   # --------------------------------------------------------------------------
@@ -254,9 +263,6 @@ scoring_boxes:
   # because they're exposed to the network and often have vulnerabilities.
   - name: "webserver"
     ip: "10.10.10.31"
-    # FLAG SYSTEM: Where Red Team plants flags on this box
-    # The flag checker will recursively search this directory
-    flag_path: "/var/www/html"
     checks:
       - type: ping
 
@@ -273,22 +279,15 @@ scoring_boxes:
       # --------------------------------------------------------------------------
       # FLAG CHECK (Attack/Defend)
       # --------------------------------------------------------------------------
-      # This check awards points to Red Team when they've planted a valid flag
-      # AND the service is still UP. The 'cmd' type runs a custom script.
-      #
-      # HOW IT WORKS:
-      # 1. Script checks if webserver-web service passed its last check
-      # 2. If service is DOWN, outputs "SERVICE_DOWN" (no points)
-      # 3. If service is UP, searches for flag.txt in /var/www/html
-      # 4. If flag contains correct token, outputs "FLAG_VALID" (Red scores!)
-      #
-      # WHY --service webserver-web?
-      # The service name format is: <box_name>-<check_type>
-      # So for the web check above, it's "webserver-web"
-      - type: cmd
-        display: "Flag"    # What shows on the scoreboard
-        command: "/opt/scoring-engine/checkfiles/check_flag.py --service webserver-web --path /var/www/html --interval 5"
-        regex: "FLAG_VALID"    # Score points when output matches this
+      # This check awards points to Red Team when they've planted a valid flag.
+      # Uses SSH to read the flag file and check if it contains the token.
+      - type: ssh
+        display: "flag"
+        credlists: ["linux_users"]
+        commands:
+          - command: "cat /var/www/html/flag.txt 2>/dev/null || echo NOT_FOUND"
+            contains: true
+            output: "{{ red_team_token }}"
 
   # --------------------------------------------------------------------------
   # ADDITIONAL LINUX SERVER (blue-linux-2)
@@ -297,70 +296,37 @@ scoring_boxes:
   # Could host databases, applications, or other services.
   - name: "blue-linux-2"
     ip: "10.10.10.32"
-    # FLAG SYSTEM: Where Red Team plants flags on this box
-    flag_path: "/home"
     checks:
       - type: ping
       - type: ssh
         credlists: ["linux_users"]
 
-      # Flag check for this box - tied to SSH service
-      - type: cmd
-        display: "Flag"
-        command: "/opt/scoring-engine/checkfiles/check_flag.py --service blue-linux-2-ssh --path /home --interval 5"
-        regex: "FLAG_VALID"
+      # Flag check for this box - uses SSH to read the flag file
+      - type: ssh
+        display: "flag"
+        credlists: ["linux_users"]
+        commands:
+          - command: "cat /home/flag.txt 2>/dev/null || echo NOT_FOUND"
+            contains: true
+            output: "{{ red_team_token }}"
 
 # ------------------------------------------------------------------------------
 # FLAG SYSTEM CONFIGURATION (Attack/Defend Mechanics)
 # ------------------------------------------------------------------------------
-# Enable the flag system to add attack/defend mechanics to your competition!
+# The flag system adds attack/defend mechanics to your competition!
 #
-# WHAT IS THE FLAG SYSTEM?
-# In traditional CTF scoring, Blue Team earns points for keeping services UP.
-# But what stops Red Team from just destroying everything? Nothing!
-#
-# The flag system fixes this by requiring Red Team to:
-# 1. Gain access to a box (without breaking the service)
-# 2. Plant a flag file with their secret token
-# 3. Keep that flag in place while the service stays UP
+# HOW IT WORKS:
+# 1. Red Team compromises a box and plants a flag file containing the token
+# 2. Scoring engine SSHes into boxes and checks if flag.txt contains the token
+# 3. If the flag is valid, Red Team earns points!
+# 4. Blue Team must hunt for and remove flag files
 #
 # This creates better competition dynamics:
 # - Red Team must be STEALTHY, not destructive
 # - Blue Team must HUNT for flags, not just keep services running
-# - Breaking services hurts BOTH teams (Blue loses service points, Red loses flag points)
-#
-# HOW IT WORKS (step by step):
-# 1. Grey Team enables the flag system (set scoring_flags_enabled: true below)
-# 2. When deployed, a random token is generated and stored on scoring server
-# 3. Token server starts on port 8081 for Red Team to retrieve their token
-# 4. Red Team: curl http://<scoring-server>:8081/token
-# 5. Red Team compromises a box and plants: echo "<token>" > /var/www/html/flag.txt
-# 6. Every N rounds, scoring engine runs check_flag.py for each box
-# 7. If service is UP and valid flag exists, Red Team earns points!
-# 8. Blue Team sees "DETECTED_N" on scoreboard (N = total flags found)
-# 9. Blue Team hunts for and removes flag files
-#
-# SCOREBOARD DISPLAY:
-# - Blue sees: "webserver - Flag: DETECTED" (but not WHERE the flag is!)
-# - This forces Blue to actually investigate, not just delete known paths
+# - Breaking services hurts BOTH teams
 
-scoring_flags_enabled: true
-
-# Points awarded per valid flag per check interval
-# Higher = more incentive for Red to plant and maintain flags
-scoring_flag_points: 5
-
-# Check flags every N service rounds
-# Example: If scoring_delay is 60 seconds and this is 5,
-# flags are checked every 5 minutes (60 * 5 = 300 seconds)
-# Lower = more frequent checks, more points potential
-scoring_flag_check_interval: 5
-
-# What filename to look for when checking flags
-# Red Team must create files with exactly this name
-scoring_flag_filename: "flag.txt"
-
-# Port for the token retrieval server
-# Red Team uses: curl http://<scoring-server>:<port>/token
-# SECURITY: Only accessible from the competition network!
-scoring_red_token_port: 8081
+# Red team token for flag validation
+# This token must appear in flag files for Red Team to score points
+# Change this for each competition!
+red_team_token: "REDTEAM-CTF-2026"
