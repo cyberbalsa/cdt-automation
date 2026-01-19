@@ -164,169 +164,35 @@ scoring_credlists:
     default_password: "Cyberrange123!"
 
 # ------------------------------------------------------------------------------
-# BOX DEFINITIONS WITH CHECKS
-# ------------------------------------------------------------------------------
-# A "box" is a server/computer that the scoring engine monitors.
-# Each box has one or more "checks" that test if specific services are working.
-#
-# SUPPORTED CHECK TYPES:
-# - ping:  Can we reach the server? (ICMP)
-# - ssh:   Can we log into Linux via SSH?
-# - winrm: Can we remotely manage Windows? (Windows Remote Management)
-# - rdp:   Is Remote Desktop available?
-# - smb:   Can we access Windows file shares?
-# - dns:   Does the DNS server resolve names correctly?
-# - web:   Is the website responding?
-# - ftp:   Can we access FTP file transfers?
-# - sql:   Can we query the database?
-# - ldap:  Can we query the directory service?
-# - smtp:  Can we send email?
-# - imap:  Can we receive email?
-# - tcp:   Is a specific port open?
-# - vnc:   Is VNC remote desktop available?
-#
-# ANATOMY OF A CHECK:
-#   - type: ssh                    # What kind of service to test
-#     credlists: ["linux_users"]   # Which credentials to use (defined above)
-#     port: 22                     # Optional: non-standard port
-#
-# DOCUMENTATION:
-# - Full check options: https://github.com/DSU-DefSec/DWAYNE-INATOR-5000#configuration
-
-scoring_boxes:
-  # --------------------------------------------------------------------------
-  # DOMAIN CONTROLLER (dc01)
-  # --------------------------------------------------------------------------
-  # The Domain Controller is the "brain" of a Windows network. It handles:
-  # - User authentication (Active Directory)
-  # - DNS (translating names like "dc01.CDT.local" to IP addresses)
-  # - Group policies and permissions
-  #
-  # If the DC goes down, users can't log in and the whole network suffers.
-  # This makes it a high-value target for attackers AND a critical service
-  # for defenders to protect.
-  - name: "dc01"
-    ip: "{{ hostvars['dc01']['internal_ip'] }}"
-    checks:
-      # Basic connectivity - can we reach the server at all?
-      - type: ping
-
-      # Windows Remote Management - can we run commands remotely?
-      # Used by administrators (and attackers!) to manage Windows servers
-      - type: winrm
-        credlists: ["admins"]
-
-      # Remote Desktop Protocol - can users connect with a graphical interface?
-      - type: rdp
-
-      # Server Message Block - Windows file sharing
-      # Tests if SMB port is listening (TCP check is more reliable)
-      - type: tcp
-        port: 445
-
-      # Domain Name System - does name resolution work?
-      # This check asks "what is the IP address of dc01.CDT.local?"
-      # and verifies the answer is correct
-      - type: dns
-        records:
-          - kind: "A"                    # A = Address record (name -> IP)
-            domain: "dc01.CDT.local"     # The name to look up
-            answer: ["{{ hostvars['dc01']['internal_ip'] }}"]      # Expected IP address(es)
-
-      # Flag check - validates Red Team flags via WinRM command
-      - type: winrm
-        display: "flag"
-        credlists: ["admins"]
-        commands:
-          - command: "Get-Content C:\\Users\\Public\\flag.txt"
-            contains: true
-            output: "{{ red_team_token }}"
-
-  # --------------------------------------------------------------------------
-  # WINDOWS MEMBER SERVER (wks-alpha)
-  # --------------------------------------------------------------------------
-  # A "member server" is a Windows server that's joined to the domain
-  # but isn't a Domain Controller. It might run applications, databases,
-  # file shares, or other services.
-  - name: "wks-alpha"
-    ip: "{{ hostvars['wks-alpha']['internal_ip'] }}"
-    checks:
-      - type: ping
-      - type: winrm
-        credlists: ["admins"]
-      - type: rdp
-
-  # --------------------------------------------------------------------------
-  # LINUX WEB SERVER (webserver)
-  # --------------------------------------------------------------------------
-  # This Linux server hosts a website. Web servers are common targets
-  # because they're exposed to the network and often have vulnerabilities.
-  - name: "webserver"
-    ip: "{{ hostvars['webserver']['internal_ip'] }}"
-    checks:
-      - type: ping
-
-      # Secure Shell - remote command-line access to Linux
-      - type: ssh
-        credlists: ["linux_users"]
-
-      # Web check - is the website responding?
-      - type: web
-        urls:
-          - path: "/"           # Check the homepage
-            status: 200         # HTTP 200 = "OK" (page loaded successfully)
-
-      # --------------------------------------------------------------------------
-      # FLAG CHECK (Attack/Defend)
-      # --------------------------------------------------------------------------
-      # This check awards points to Red Team when they've planted a valid flag.
-      # Uses SSH to read the flag file and check if it contains the token.
-      - type: ssh
-        display: "flag"
-        credlists: ["linux_users"]
-        commands:
-          - command: "cat /var/www/html/flag.txt 2>/dev/null || echo NOT_FOUND"
-            contains: true
-            output: "{{ red_team_token }}"
-
-  # --------------------------------------------------------------------------
-  # ADDITIONAL LINUX SERVER (comms)
-  # --------------------------------------------------------------------------
-  # Another Linux server for the Blue Team to defend.
-  # Could host databases, applications, or other services.
-  - name: "comms"
-    ip: "{{ hostvars['comms']['internal_ip'] }}"
-    checks:
-      - type: ping
-      - type: ssh
-        credlists: ["linux_users"]
-
-      # Flag check for this box - uses SSH to read the flag file
-      - type: ssh
-        display: "flag"
-        credlists: ["linux_users"]
-        commands:
-          - command: "cat /home/flag.txt 2>/dev/null || echo NOT_FOUND"
-            contains: true
-            output: "{{ red_team_token }}"
-
-# ------------------------------------------------------------------------------
 # FLAG SYSTEM CONFIGURATION (Attack/Defend Mechanics)
 # ------------------------------------------------------------------------------
 # The flag system adds attack/defend mechanics to your competition!
 #
 # HOW IT WORKS:
 # 1. Red Team compromises a box and plants a flag file containing the token
-# 2. Scoring engine SSHes into boxes and checks if flag.txt contains the token
+# 2. Scoring engine checks if flag.txt contains the token
 # 3. If the flag is valid, Red Team earns points!
 # 4. Blue Team must hunt for and remove flag files
-#
-# This creates better competition dynamics:
-# - Red Team must be STEALTHY, not destructive
-# - Blue Team must HUNT for flags, not just keep services running
-# - Breaking services hurts BOTH teams
 
 # Red team token for flag validation
 # This token must appear in flag files for Red Team to score points
 # Change this for each competition!
 red_team_token: "REDTEAM-CTF-2026"
+
+# ==============================================================================
+# BOX CONFIGURATIONS
+# ==============================================================================
+# Box configurations are now AUTO-GENERATED from OpenTofu service_hosts.
+#
+# HOW IT WORKS:
+# 1. Define services in opentofu/variables.tf -> service_hosts
+# 2. Run: tofu apply && python3 import-tofu-to-ansible.py
+# 3. Inventory sets host_services variable on each host
+# 4. dwayne.conf.j2 template generates [[box]] entries automatically
+#
+# TO CUSTOMIZE CHECKS:
+# - Default checks: ansible/group_vars/scoring_services.yml
+# - Per-box overrides: ansible/group_vars/scoring_overrides.yml
+#
+# See docs/plans/2026-01-19-service-mapping-design.md for full documentation.
+# ==============================================================================
