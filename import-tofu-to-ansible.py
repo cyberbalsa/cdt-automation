@@ -207,7 +207,9 @@ def create_inventory(tofu_data, ansible_dir='ansible', inventory_filename='inven
         f.write("# Grey Team runs the competition: scoring engine, monitoring, infrastructure.\n")
         f.write("[scoring]\n")
         for name, floating_ip, internal_ip in zip(scoring_names, scoring_floating_ips, scoring_ips):
-            f.write(f"{name} ansible_host={floating_ip} internal_ip={internal_ip}\n")
+            services = host_to_services.get(name, [])
+            services_json = json.dumps(services)
+            f.write(f"{name} ansible_host={floating_ip} internal_ip={internal_ip} host_services='{services_json}'\n")
         f.write("\n")
 
         # =====================================================================
@@ -219,7 +221,9 @@ def create_inventory(tofu_data, ansible_dir='ansible', inventory_filename='inven
         f.write("# Windows VMs for Blue Team to defend. First VM is Domain Controller.\n")
         f.write("[blue_windows]\n")
         for name, floating_ip, internal_ip in zip(blue_windows_names, blue_windows_floating_ips, blue_windows_ips):
-            f.write(f"{name} ansible_host={floating_ip} internal_ip={internal_ip}\n")
+            services = host_to_services.get(name, [])
+            services_json = json.dumps(services)
+            f.write(f"{name} ansible_host={floating_ip} internal_ip={internal_ip} host_services='{services_json}'\n")
         f.write("\n")
 
         # =====================================================================
@@ -231,7 +235,9 @@ def create_inventory(tofu_data, ansible_dir='ansible', inventory_filename='inven
         f.write("# Linux servers for Blue Team to defend (web, database, etc.)\n")
         f.write("[blue_linux]\n")
         for name, floating_ip, internal_ip in zip(blue_linux_names, blue_linux_floating_ips, blue_linux_ips):
-            f.write(f"{name} ansible_host={floating_ip} internal_ip={internal_ip}\n")
+            services = host_to_services.get(name, [])
+            services_json = json.dumps(services)
+            f.write(f"{name} ansible_host={floating_ip} internal_ip={internal_ip} host_services='{services_json}'\n")
         f.write("\n")
 
         # =====================================================================
@@ -243,7 +249,9 @@ def create_inventory(tofu_data, ansible_dir='ansible', inventory_filename='inven
         f.write("# Kali attack machines for Red Team. Pre-loaded with pentesting tools.\n")
         f.write("[red_team]\n")
         for name, floating_ip, internal_ip in zip(red_kali_names, red_kali_floating_ips, red_kali_ips):
-            f.write(f"{name} ansible_host={floating_ip} internal_ip={internal_ip}\n")
+            services = host_to_services.get(name, [])
+            services_json = json.dumps(services)
+            f.write(f"{name} ansible_host={floating_ip} internal_ip={internal_ip} host_services='{services_json}'\n")
         f.write("\n")
 
         # =====================================================================
