@@ -206,7 +206,7 @@ scoring_boxes:
   # This makes it a high-value target for attackers AND a critical service
   # for defenders to protect.
   - name: "dc01"
-    ip: "10.10.10.21"
+    ip: "{{ hostvars['dc01']['internal_ip'] }}"
     checks:
       # Basic connectivity - can we reach the server at all?
       - type: ping
@@ -231,25 +231,25 @@ scoring_boxes:
         records:
           - kind: "A"                    # A = Address record (name -> IP)
             domain: "dc01.CDT.local"     # The name to look up
-            answer: ["10.10.10.21"]      # Expected IP address(es)
+            answer: ["{{ hostvars['dc01']['internal_ip'] }}"]      # Expected IP address(es)
 
-      # Flag check - validates Red Team flags via SMB
-      - type: smb
+      # Flag check - validates Red Team flags via WinRM command
+      - type: winrm
         display: "flag"
         credlists: ["admins"]
-        share: "C$"
-        files:
-          - name: "Users\\Public\\flag.txt"
-            regex: "{{ red_team_token }}"
+        commands:
+          - command: "Get-Content C:\\Users\\Public\\flag.txt"
+            contains: true
+            output: "{{ red_team_token }}"
 
   # --------------------------------------------------------------------------
-  # WINDOWS MEMBER SERVER (blue-win-2)
+  # WINDOWS MEMBER SERVER (wks-alpha)
   # --------------------------------------------------------------------------
   # A "member server" is a Windows server that's joined to the domain
   # but isn't a Domain Controller. It might run applications, databases,
   # file shares, or other services.
-  - name: "blue-win-2"
-    ip: "10.10.10.22"
+  - name: "wks-alpha"
+    ip: "{{ hostvars['wks-alpha']['internal_ip'] }}"
     checks:
       - type: ping
       - type: winrm
@@ -262,7 +262,7 @@ scoring_boxes:
   # This Linux server hosts a website. Web servers are common targets
   # because they're exposed to the network and often have vulnerabilities.
   - name: "webserver"
-    ip: "10.10.10.31"
+    ip: "{{ hostvars['webserver']['internal_ip'] }}"
     checks:
       - type: ping
 
@@ -290,12 +290,12 @@ scoring_boxes:
             output: "{{ red_team_token }}"
 
   # --------------------------------------------------------------------------
-  # ADDITIONAL LINUX SERVER (blue-linux-2)
+  # ADDITIONAL LINUX SERVER (comms)
   # --------------------------------------------------------------------------
   # Another Linux server for the Blue Team to defend.
   # Could host databases, applications, or other services.
-  - name: "blue-linux-2"
-    ip: "10.10.10.32"
+  - name: "comms"
+    ip: "{{ hostvars['comms']['internal_ip'] }}"
     checks:
       - type: ping
       - type: ssh

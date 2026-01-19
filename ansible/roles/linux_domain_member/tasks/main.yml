@@ -95,6 +95,9 @@
     executable: /bin/bash
   register: linux_domain_member_kinit_test
   changed_when: false
+  retries: 5
+  delay: 30
+  until: linux_domain_member_kinit_test.rc == 0
   # KERBEROS COMMANDS EXPLAINED:
   # - kinit: Obtains a Kerberos Ticket Granting Ticket (TGT) from the KDC (Domain Controller)
   #          The TGT proves your identity and is used to request service tickets
@@ -136,6 +139,9 @@
   when: ldm_domain_name not in linux_domain_member_realm_status.stdout
   register: linux_domain_member_realm_join
   changed_when: linux_domain_member_realm_join.rc == 0
+  retries: 3
+  delay: 30
+  until: linux_domain_member_realm_join.rc == 0
   # REALM JOIN EXPLAINED:
   # - realm join: Joins this Linux machine to the Active Directory domain
   #   Docs: https://www.freedesktop.org/software/realmd/docs/realm.html

@@ -1,0 +1,136 @@
+---
+# ==============================================================================
+# IMPLANT FLAGS PLAYBOOK (Testing/Demo Only)
+# ==============================================================================
+# Places flag files on scored boxes for testing the scoring engine.
+# In a real competition, Red Team would plant these flags after compromising boxes.
+#
+# Usage:
+#   ansible-playbook playbooks/implant-flags.yml
+#
+# To remove flags:
+#   ansible-playbook playbooks/implant-flags.yml -e "remove_flags=true"
+#
+# WARNING: This playbook is for TESTING ONLY. Do not include in site.yml.
+# ==============================================================================
+
+- name: Implant Flags on Windows Boxes
+  hosts: windows_dc
+  gather_facts: false
+  vars:
+    flag_content: "{{ red_team_token }}"
+    remove_flags: false
+  vars_files:
+    - ../group_vars/scoring.yml
+
+  tasks:
+    - name: Create flag file on Windows (dc01)
+      ansible.windows.win_copy:
+        content: "{{ flag_content }}"
+        dest: C:\Users\Public\flag.txt
+      when: not remove_flags | bool
+
+    - name: Remove flag file from Windows (dc01)
+      ansible.windows.win_file:
+        path: C:\Users\Public\flag.txt
+        state: absent
+      when: remove_flags | bool
+
+    - name: Display Windows flag status
+      ansible.builtin.debug:
+        msg: "{{ 'Removed' if remove_flags | bool else 'Planted' }} flag on {{ inventory_hostname }} at C:\\Users\\Public\\flag.txt"
+
+
+- name: Implant Flags on Linux Boxes
+  hosts: webserver,comms
+  gather_facts: false
+  become: true
+  vars:
+    flag_content: "{{ red_team_token }}"
+    remove_flags: false
+  vars_files:
+    - ../group_vars/scoring.yml
+
+  tasks:
+    # Webserver flag location: /var/www/html/flag.txt
+    - name: Ensure /var/www/html directory exists on webserver
+      ansible.builtin.file:
+        path: /var/www/html
+        state: directory
+        mode: '0755'
+        owner: root
+        group: root
+      when:
+        - inventory_hostname == 'webserver'
+        - not remove_flags | bool
+
+    - name: Create flag file on webserver
+      ansible.builtin.copy:
+        content: "{{ flag_content }}"
+        dest: /var/www/html/flag.txt
+        mode: '0644'
+        owner: root
+        group: root
+      when:
+        - inventory_hostname == 'webserver'
+        - not remove_flags | bool
+
+    - name: Remove flag file from webserver
+      ansible.builtin.file:
+        path: /var/www/html/flag.txt
+        state: absent
+      when:
+        - inventory_hostname == 'webserver'
+        - remove_flags | bool
+
+    # Comms flag location: /home/flag.txt
+    - name: Create flag file on comms
+      ansible.builtin.copy:
+        content: "{{ flag_content }}"
+        dest: /home/flag.txt
+        mode: '0644'
+        owner: root
+        group: root
+      when:
+        - inventory_hostname == 'comms'
+        - not remove_flags | bool
+
+    - name: Remove flag file from comms
+      ansible.builtin.file:
+        path: /home/flag.txt
+        state: absent
+      when:
+        - inventory_hostname == 'comms'
+        - remove_flags | bool
+
+    - name: Display Linux flag status
+      ansible.builtin.debug:
+        msg: >-
+          {{ 'Removed' if remove_flags | bool else 'Planted' }} flag on {{ inventory_hostname }}
+          at {{ '/var/www/html/flag.txt' if inventory_hostname == 'webserver' else '/home/flag.txt' }}
+
+
+- name: Summary
+  hosts: localhost
+  gather_facts: false
+  vars:
+    remove_flags: false
+  vars_files:
+    - ../group_vars/scoring.yml
+
+  tasks:
+    - name: Display summary
+      ansible.builtin.debug:
+        msg:
+          - "=============================================="
+          - "FLAG {{ 'REMOVAL' if remove_flags | bool else 'IMPLANT' }} COMPLETE"
+          - "=============================================="
+          - "Token: {{ red_team_token }}"
+          - ""
+          - "Flag locations:"
+          - "  - dc01: C:\\Users\\Public\\flag.txt"
+          - "  - webserver: /var/www/html/flag.txt"
+          - "  - comms: /home/flag.txt"
+          - ""
+          - "Run ./scoring-power.sh status to verify scoring"
+          - "=============================================="

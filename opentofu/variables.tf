@@ -152,7 +152,7 @@ variable "flavor_name" {
 variable "keypair" {
   description = "Name of the SSH keypair in OpenStack (must be uploaded first)"
   type        = string
-  default     = "homefedora"
+  default     = "goad-key"
 
   # IMPORTANT: Change this to YOUR keypair name!
   #
@@ -182,19 +182,19 @@ variable "scoring_count" {
 variable "blue_windows_count" {
   description = "Number of Blue Team Windows VMs (first becomes Domain Controller)"
   type        = number
-  default     = 2
+  default     = 15
 }
 
 variable "blue_linux_count" {
   description = "Number of Blue Team Linux VMs"
   type        = number
-  default     = 2
+  default     = 5
 }
 
 variable "red_kali_count" {
   description = "Number of Red Team Kali attack VMs"
   type        = number
-  default     = 2
+  default     = 10
 }
 
 # ------------------------------------------------------------------------------
@@ -205,13 +205,13 @@ variable "red_kali_count" {
 variable "blue_windows_hostnames" {
   description = "Custom hostnames for Blue Team Windows VMs (optional)"
   type        = list(string)
-  default     = ["dc01"]
+  default     = ["dc01", "wks-alpha", "wks-debbie"]
 }
 
 variable "blue_linux_hostnames" {
   description = "Custom hostnames for Blue Team Linux VMs (optional)"
   type        = list(string)
-  default     = ["webserver"]
+  default     = ["webserver", "comms"]
 }
 
 # ------------------------------------------------------------------------------

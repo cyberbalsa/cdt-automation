@@ -19,6 +19,9 @@
   hosts: scoring
   become: true
   gather_facts: true
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/scoring.yml
 
   pre_tasks:
     - name: Verify we have scoring configuration

@@ -97,13 +97,13 @@ resource "openstack_compute_instance_v2" "blue_windows" {
   network {
     uuid        = openstack_networking_network_v2.cdt_net.id
     # Connects to the shared network (owned by main, shared via RBAC)
-    fixed_ip_v4 = "10.10.10.2${count.index + 1}"
-    # Blue Windows IPs: 10.10.10.21, 10.10.10.22, 10.10.10.23...
-    # IP SCHEME:
-    #   10.10.10.1x = Scoring (Grey Team)
-    #   10.10.10.2x = Blue Windows
-    #   10.10.10.3x = Blue Linux
-    #   10.10.10.4x = Red Team Kali
+    fixed_ip_v4 = format("10.10.10.%d", 20 + count.index + 1)
+    # Blue Windows IPs: 10.10.10.21, 10.10.10.22, ... 10.10.10.35, etc.
+    # IP SCHEME (using arithmetic to support 10+ VMs per group):
+    #   10.10.10.11+ = Scoring (Grey Team)
+    #   10.10.10.21+ = Blue Windows
+    #   10.10.10.31+ = Blue Linux
+    #   10.10.10.41+ = Red Team Kali
   }
 
   block_device {
@@ -147,8 +147,8 @@ resource "openstack_compute_instance_v2" "blue_linux" {
 
   network {
     uuid        = openstack_networking_network_v2.cdt_net.id
-    fixed_ip_v4 = "10.10.10.3${count.index + 1}"
-    # Blue Linux IPs: 10.10.10.31, 10.10.10.32, 10.10.10.33...
+    fixed_ip_v4 = format("10.10.10.%d", 100 + count.index + 1)
+    # Blue Linux IPs: 10.10.10.101, 10.10.10.102, ... (base 100)
   }
 
   block_device {
@@ -198,8 +198,8 @@ resource "openstack_compute_instance_v2" "scoring" {
 
   network {
     uuid        = openstack_networking_network_v2.cdt_net.id
-    fixed_ip_v4 = "10.10.10.1${count.index + 1}"
-    # Scoring IPs: 10.10.10.11, 10.10.10.12...
+    fixed_ip_v4 = format("10.10.10.%d", 10 + count.index + 1)
+    # Scoring IPs: 10.10.10.11, 10.10.10.12, ... 10.10.10.20+
   }
 
   block_device {
@@ -250,8 +250,8 @@ resource "openstack_compute_instance_v2" "red_kali" {
 
   network {
     uuid        = openstack_networking_network_v2.cdt_net.id
-    fixed_ip_v4 = "10.10.10.4${count.index + 1}"
-    # Red Team IPs: 10.10.10.41, 10.10.10.42...
+    fixed_ip_v4 = format("10.10.10.%d", 150 + count.index + 1)
+    # Red Team IPs: 10.10.10.151, 10.10.10.152, ... (base 150)
   }
 
   block_device {
@@ -389,10 +389,12 @@ resource "openstack_networking_floatingip_associate_v2" "red_fip_assoc" {
 # IP ADDRESS SUMMARY
 # ==============================================================================
 #
-#   10.10.10.11-19  =  Scoring/Grey Team (main project)
-#   10.10.10.21-29  =  Blue Team Windows (blue project)
-#   10.10.10.31-39  =  Blue Team Linux (blue project)
-#   10.10.10.41-49  =  Red Team Kali (red project)
+#   10.10.10.11-20    =  Scoring/Grey Team (main project)   [base 10, max 10 VMs]
+#   10.10.10.21-99    =  Blue Team Windows (blue project)   [base 20, max 79 VMs]
+#   10.10.10.101-149  =  Blue Team Linux (blue project)     [base 100, max 49 VMs]
+#   10.10.10.151-249  =  Red Team Kali (red project)        [base 150, max 99 VMs]
+#
+# Uses format() with arithmetic to support large VM counts without overlap.
 #
 # All VMs share the same 10.10.10.0/24 network via RBAC sharing.
 # Each VM also gets a floating IP (100.65.x.x) for external access.

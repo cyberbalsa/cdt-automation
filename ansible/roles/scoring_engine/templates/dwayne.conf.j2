@@ -143,13 +143,16 @@ ip = "{{ box.ip }}"
 {% endfor %}
 {% endif %}
 {# FTP/SMB Files #}
+{% if check.domain is defined %}
+    domain = "{{ check.domain }}"
+{% endif %}
 {% if check.share is defined %}
     share = "{{ check.share }}"
 {% endif %}
 {% if check.files is defined %}
 {% for file in check.files %}
         [[box.{{ check.type }}.file]]
-        name = "{{ file.name }}"
+        name = '{{ file.name }}'
 {% if file.hash is defined %}
         hash = "{{ file.hash }}"
 {% endif %}
