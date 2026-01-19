@@ -1,0 +1,138 @@
+---
+# ===========================================================================
+# SETUP SMB FILE SHARING (Windows)
+# ===========================================================================
+# Configures Windows Server Message Block (SMB) file sharing for scoring.
+#
+# Target hosts: [smb] inventory group
+# Services: SMB (445)
+#
+# What it does:
+# 1. Ensures Server service is running (provides SMB)
+# 2. Enables File and Printer Sharing firewall rules
+# 3. Creates a shared folder for CTF scoring
+# ===========================================================================
+
+- name: Setup Windows SMB File Sharing
+  hosts: smb
+  gather_facts: false
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # STEP 1: Wait for WinRM connectivity
+    # -------------------------------------------------------------------------
+    - name: Wait for WinRM to be ready
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+        delay: 5
+
+    - name: Gather facts after connection
+      ansible.builtin.setup:
+
+    - name: Load global variables
+      ansible.builtin.include_vars:
+        file: "../group_vars/all.yml"
+
+    - name: Load service variables
+      ansible.builtin.include_vars:
+        file: "../group_vars/services.yml"
+
+    # -------------------------------------------------------------------------
+    # STEP 2: Ensure Server service is running
+    # -------------------------------------------------------------------------
+    - name: Ensure Server service (LanmanServer) is running
+      ansible.windows.win_service:
+        name: LanmanServer
+        state: started
+        start_mode: auto
+
+    # -------------------------------------------------------------------------
+    # STEP 3: Enable SMB firewall rules
+    # -------------------------------------------------------------------------
+    - name: Enable File and Printer Sharing firewall rules
+      ansible.windows.win_powershell:
+        script: |
+          # Enable firewall rules for File and Printer Sharing
+          $rules = Get-NetFirewallRule -DisplayGroup "File and Printer Sharing" -ErrorAction SilentlyContinue
+          if ($rules) {
+              $rules | Enable-NetFirewallRule
+              Write-Output "Enabled $($rules.Count) File and Printer Sharing firewall rules"
+          } else {
+              Write-Output "File and Printer Sharing rules already configured"
+          }
+
+          # Verify SMB is listening
+          $smbPort = Get-NetTCPConnection -LocalPort 445 -State Listen -ErrorAction SilentlyContinue
+          if ($smbPort) {
+              Write-Output "SMB is listening on port 445"
+              $Ansible.Changed = $false
+          } else {
+              Write-Output "SMB port 445 not yet listening, may need reboot"
+          }
+      register: firewall_result
+
+    - name: Show firewall configuration result
+      ansible.builtin.debug:
+        var: firewall_result.output
+
+    # -------------------------------------------------------------------------
+    # STEP 4: Create CTF shared folder
+    # -------------------------------------------------------------------------
+    - name: Create shared folder directory
+      ansible.windows.win_file:
+        path: C:\CTFShare
+        state: directory
+
+    - name: Create test file in shared folder
+      ansible.windows.win_copy:
+        content: |
+          CTF File Share
+          ==============
+          This share is used for CTF scoring validation.
+          Server: {{ inventory_hostname }}
+        dest: C:\CTFShare\readme.txt
+
+    - name: Configure SMB share
+      ansible.windows.win_powershell:
+        script: |
+          # Check if share exists
+          $share = Get-SmbShare -Name "CTFShare" -ErrorAction SilentlyContinue
+
+          if (-not $share) {
+              # Create the share with read access for Everyone
+              New-SmbShare -Name "CTFShare" -Path "C:\CTFShare" -ReadAccess "Everyone" -Description "CTF Scoring Share"
+              Write-Output "Created CTFShare SMB share"
+              $Ansible.Changed = $true
+          } else {
+              Write-Output "CTFShare SMB share already exists"
+              $Ansible.Changed = $false
+          }
+
+          # Display share info
+          Get-SmbShare -Name "CTFShare" | Format-List
+      register: share_result
+
+    - name: Show share configuration result
+      ansible.builtin.debug:
+        var: share_result.output
+
+    # -------------------------------------------------------------------------
+    # STEP 5: Verify SMB connectivity
+    # -------------------------------------------------------------------------
+    - name: Verify SMB port is listening
+      ansible.windows.win_powershell:
+        script: |
+          $smbPort = Get-NetTCPConnection -LocalPort 445 -State Listen -ErrorAction SilentlyContinue
+          if ($smbPort) {
+              Write-Output "SUCCESS: SMB is listening on port 445"
+              Write-Output "Local addresses: $($smbPort.LocalAddress -join ', ')"
+              $Ansible.Changed = $false
+          } else {
+              Write-Error "FAILED: SMB is not listening on port 445"
+              $Ansible.Failed = $true
+          }
+      register: smb_verify
+
+    - name: Show SMB verification result
+      ansible.builtin.debug:
+        var: smb_verify.output

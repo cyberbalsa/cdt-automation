@@ -44,7 +44,7 @@ scoring_timezone: "America/New_York"
 
 # Start with scoring paused? (true = paused, false = running immediately)
 # TIP: Set to true so you can verify everything works before starting the clock
-scoring_start_paused: true
+scoring_start_paused: false
 
 # Show detailed information to competitors on the scoreboard
 scoring_verbose: true

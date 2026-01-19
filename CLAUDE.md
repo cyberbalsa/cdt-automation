@@ -378,3 +378,31 @@ Always regenerate inventory after OpenTofu changes. The script reads live state,
 - **Linux Admins**: jdoe, asmith (sudo access)
 - **SSH Format**: `username@CDT.local@<host_ip>`
 - **RDP**: Enabled on port 3389 for both Windows (native) and Linux (xrdp with LXQT)
+
+## Documentation
+
+The `docs/` directory contains detailed guides:
+
+| Document | Description |
+|----------|-------------|
+| `adding-services-guide.md` | **Beginner-friendly** step-by-step guide for adding each service type |
+| `service-configuration.md` | Technical reference for service configuration |
+| `scoring-engine.md` | How the DWAYNE-INATOR-5000 scoring engine works |
+| `deployment-guide.md` | Full infrastructure deployment guide |
+| `connectivity-guide.md` | Troubleshooting network connectivity |
+| `student-checklist.md` | Quick checklist for students |
+
+### Adding New Services
+
+To add a new service to scoring, see `docs/adding-services-guide.md`. Quick summary:
+
+1. Edit `opentofu/variables.tf` - add hostname to `service_hosts`
+2. Run `python3 import-tofu-to-ansible.py`
+3. Run `ansible-playbook playbooks/setup-scoring-engine.yml`
+4. Verify with `ansible-playbook playbooks/validate-scoreboard.yml`
+
+### Scoring Engine Notes
+
+The DWAYNE-INATOR-5000 scoring engine has known bugs. Workarounds are documented in:
+- `docs/adding-services-guide.md` (Known Issues section)
+- `ansible/group_vars/scoring_services.yml` (comments in file)

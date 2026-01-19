@@ -90,6 +90,9 @@ SyslogIdentifier={{ scoring_service_name }}
 # ------------------------------------------------------------------------------
 # These options limit what the service can do, reducing damage if compromised
 
+# Allow raw network access for ICMP ping checks
+AmbientCapabilities=CAP_NET_RAW
+
 # Prevent the service from gaining new privileges
 NoNewPrivileges=true
 

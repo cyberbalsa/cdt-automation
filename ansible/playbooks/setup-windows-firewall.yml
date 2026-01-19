@@ -1,0 +1,97 @@
+---
+# ===========================================================================
+# SETUP WINDOWS FIREWALL RULES
+# ===========================================================================
+# Configures Windows Firewall to allow ICMP (ping) and other scoring services.
+#
+# Target hosts: [windows] inventory group
+# ===========================================================================
+
+- name: Configure Windows Firewall for Scoring
+  hosts: windows
+  gather_facts: false
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # STEP 1: Wait for WinRM connectivity
+    # -------------------------------------------------------------------------
+    - name: Wait for WinRM to be ready
+      ansible.builtin.wait_for_connection:
+        timeout: 300
+        delay: 5
+
+    - name: Gather facts after connection
+      ansible.builtin.setup:
+
+    # -------------------------------------------------------------------------
+    # STEP 2: Enable ICMP Echo Request (Ping)
+    # -------------------------------------------------------------------------
+    - name: Enable ICMPv4 Echo Request (Inbound)
+      ansible.windows.win_powershell:
+        script: |
+          # Enable ICMPv4 Echo Request rules
+          $rules = Get-NetFirewallRule -DisplayName "*ICMPv4-In*" -ErrorAction SilentlyContinue
+          if ($rules) {
+              $rules | Enable-NetFirewallRule
+              Write-Output "Enabled existing ICMPv4 inbound rules"
+              $Ansible.Changed = $true
+          }
+
+          # Also create a rule if none exists
+          $existingRule = Get-NetFirewallRule -DisplayName "Allow ICMPv4 Ping" -ErrorAction SilentlyContinue
+          if (-not $existingRule) {
+              New-NetFirewallRule -DisplayName "Allow ICMPv4 Ping" `
+                  -Direction Inbound `
+                  -Protocol ICMPv4 `
+                  -IcmpType 8 `
+                  -Action Allow `
+                  -Enabled True `
+                  -Profile Any
+              Write-Output "Created ICMPv4 ping rule"
+              $Ansible.Changed = $true
+          } else {
+              $existingRule | Enable-NetFirewallRule
+              Write-Output "ICMPv4 ping rule already exists and is enabled"
+          }
+      register: icmp_result
+
+    - name: Show ICMP configuration result
+      ansible.builtin.debug:
+        var: icmp_result.output
+
+    # -------------------------------------------------------------------------
+    # STEP 3: Enable WinRM (for scoring checks)
+    # -------------------------------------------------------------------------
+    - name: Enable WinRM firewall rules
+      ansible.windows.win_powershell:
+        script: |
+          $rules = Get-NetFirewallRule -DisplayGroup "Windows Remote Management" -ErrorAction SilentlyContinue
+          if ($rules) {
+              $rules | Enable-NetFirewallRule
+              Write-Output "Enabled Windows Remote Management firewall rules"
+          }
+
+    # -------------------------------------------------------------------------
+    # STEP 4: Enable RDP (if not already)
+    # -------------------------------------------------------------------------
+    - name: Enable RDP firewall rules
+      ansible.windows.win_powershell:
+        script: |
+          $rules = Get-NetFirewallRule -DisplayGroup "Remote Desktop" -ErrorAction SilentlyContinue
+          if ($rules) {
+              $rules | Enable-NetFirewallRule
+              Write-Output "Enabled Remote Desktop firewall rules"
+          }
+
+    # -------------------------------------------------------------------------
+    # STEP 5: Verify ping works
+    # -------------------------------------------------------------------------
+    - name: Test ping to self
+      ansible.windows.win_command:
+        cmd: ping -n 1 127.0.0.1
+      register: ping_test
+      changed_when: false
+
+    - name: Show ping test result
+      ansible.builtin.debug:
+        msg: "Ping test successful on {{ inventory_hostname }}"

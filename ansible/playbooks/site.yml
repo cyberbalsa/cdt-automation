@@ -187,6 +187,11 @@
   when: groups['irc'] is defined and groups['irc'] | length > 0
   tags: ['services', 'irc']
 
+- name: Setup SMB File Sharing (Windows)
+  import_playbook: setup-smb.yml
+  when: groups['smb'] is defined and groups['smb'] | length > 0
+  tags: ['services', 'smb']
+
 # ==============================================================================
 # STEP 6: CONFIGURE REMOTE DESKTOP ACCESS
 # ==============================================================================

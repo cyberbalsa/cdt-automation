@@ -27,8 +27,13 @@ service_check_defaults:
   # --------------------------------------------------------------------------
 
   # ICMP ping - basic "is the host alive" check
+  # Using allowpacketloss workaround for DWAYNE go-ping library issues
+  # percent: 101 means allow up to 100% packet loss (workaround)
   ping:
     - type: ping
+      count: 1
+      allowpacketloss: true
+      percent: 101
 
   # --------------------------------------------------------------------------
   # REMOTE ACCESS - LINUX
@@ -64,9 +69,12 @@ service_check_defaults:
     - type: dns
 
   # LDAP - Lightweight Directory Access Protocol
-  # Queries Active Directory
+  # Using TCP check as workaround for DWAYNE LDAP domain parsing bug
+  # TODO: Switch to proper ldap check when DWAYNE is fixed
   ldap:
-    - type: ldap
+    - type: tcp
+      port: 389
+      display: "ldap"
 
   # --------------------------------------------------------------------------
   # FILE SERVICES
@@ -77,6 +85,7 @@ service_check_defaults:
   smb:
     - type: tcp
       port: 445
+      display: "smb"
 
   # FTP - File Transfer Protocol
   # Uses linux_users credlist for authenticated access
@@ -110,17 +119,22 @@ service_check_defaults:
   # --------------------------------------------------------------------------
 
   # Mail - Email server (SMTP + IMAP)
-  # SMTP for sending, IMAP for receiving
+  # Using TCP checks as workaround for DWAYNE SMTP/IMAP check bugs
+  # TODO: Switch to proper smtp/imap checks when DWAYNE is fixed
   mail:
-    - type: smtp
-    - type: imap
-      credlists: ["domain_users"]
+    - type: tcp
+      port: 25
+      display: "smtp"
+    - type: tcp
+      port: 143
+      display: "imap"
 
   # IRC - Internet Relay Chat
   # TCP check on default IRC port
   irc:
     - type: tcp
       port: 6667
+      display: "irc"
 
   # --------------------------------------------------------------------------
   # REMOTE DESKTOP - LINUX

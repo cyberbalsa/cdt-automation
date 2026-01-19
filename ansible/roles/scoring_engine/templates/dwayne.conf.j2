@@ -89,11 +89,29 @@ ip = "{{ hostvars[hostname]['internal_ip'] }}"
 {% if check.port is defined %}
     port = {{ check.port }}
 {% endif %}
+{% if check.count is defined %}
+    count = {{ check.count }}
+{% endif %}
+{% if check.allowpacketloss is defined %}
+    allowpacketloss = {{ check.allowpacketloss | lower }}
+{% endif %}
+{% if check.percent is defined %}
+    percent = {{ check.percent }}
+{% endif %}
 {% if check.encrypted is defined %}
     encrypted = {{ check.encrypted | lower }}
 {% endif %}
 {% if check.anonymous is defined %}
     anonymous = {{ check.anonymous | lower }}
+{% endif %}
+{% if check.sender is defined %}
+    sender = "{{ check.sender }}"
+{% endif %}
+{% if check.receiver is defined %}
+    receiver = "{{ check.receiver }}"
+{% endif %}
+{% if check.body is defined %}
+    body = "{{ check.body }}"
 {% endif %}
 {% if check.records is defined %}
 {% for record in check.records %}
@@ -193,11 +211,29 @@ ip = "{{ hostvars[hostname]['internal_ip'] }}"
 {% if check.port is defined %}
     port = {{ check.port }}
 {% endif %}
+{% if check.count is defined %}
+    count = {{ check.count }}
+{% endif %}
+{% if check.allowpacketloss is defined %}
+    allowpacketloss = {{ check.allowpacketloss | lower }}
+{% endif %}
+{% if check.percent is defined %}
+    percent = {{ check.percent }}
+{% endif %}
 {% if check.encrypted is defined %}
     encrypted = {{ check.encrypted | lower }}
 {% endif %}
 {% if check.anonymous is defined %}
     anonymous = {{ check.anonymous | lower }}
+{% endif %}
+{% if check.sender is defined %}
+    sender = "{{ check.sender }}"
+{% endif %}
+{% if check.receiver is defined %}
+    receiver = "{{ check.receiver }}"
+{% endif %}
+{% if check.body is defined %}
+    body = "{{ check.body }}"
 {% endif %}
 {% if check.urls is defined %}
 {% for url in check.urls %}

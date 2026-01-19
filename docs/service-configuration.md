@@ -2,6 +2,8 @@
 
 This guide explains how to configure which services run on which boxes in your CTF infrastructure.
 
+> **New to this?** See [Adding Services Guide](adding-services-guide.md) for beginner-friendly, step-by-step instructions with examples for each service type.
+
 ## Table of Contents
 
 1. [Quick Start](#quick-start)
