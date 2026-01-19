@@ -50,14 +50,35 @@ defaultpw = "{{ cred.default_password }}"
 
 {% endfor %}
 # ==============================================================================
-# BOX CONFIGURATIONS
+# BOX CONFIGURATIONS (Auto-generated from service_hosts)
 # ==============================================================================
-{% for box in scoring_boxes %}
-[[box]]
-name = "{{ box.name }}"
-ip = "{{ box.ip }}"
+# Boxes are generated from OpenTofu service_hosts variable.
+# Default checks come from group_vars/scoring_services.yml
+# Custom overrides come from group_vars/scoring_overrides.yml
+#
+# To add a service to a box:
+# 1. Edit opentofu/variables.tf -> service_hosts
+# 2. Run: tofu apply && python3 import-tofu-to-ansible.py
+# 3. Run: ansible-playbook playbooks/setup-scoring-engine.yml
 
-{% for check in box.checks %}
+{% set scored_hosts = [] %}
+{% for host in groups['blue_team'] | default([]) %}
+{% if hostvars[host]['host_services'] is defined %}
+{% set _ = scored_hosts.append(host) %}
+{% endif %}
+{% endfor %}
+
+{% for hostname in scored_hosts %}
+{% set host_services = hostvars[hostname]['host_services'] | from_json if hostvars[hostname]['host_services'] is string else hostvars[hostname]['host_services'] %}
+{% set box_overrides = scoring_box_overrides.get(hostname, {}) if scoring_box_overrides is defined else {} %}
+[[box]]
+name = "{{ hostname }}"
+ip = "{{ hostvars[hostname]['internal_ip'] }}"
+
+{% for service in host_services %}
+{% if service in box_overrides %}
+{# Use override checks for this service #}
+{% for check in box_overrides[service] %}
     [[box.{{ check.type }}]]
 {% if check.display is defined %}
     display = "{{ check.display }}"
@@ -74,7 +95,6 @@ ip = "{{ box.ip }}"
 {% if check.anonymous is defined %}
     anonymous = {{ check.anonymous | lower }}
 {% endif %}
-{# DNS Records #}
 {% if check.records is defined %}
 {% for record in check.records %}
         [[box.dns.record]]
@@ -84,7 +104,6 @@ ip = "{{ box.ip }}"
 
 {% endfor %}
 {% endif %}
-{# Web URLs #}
 {% if check.urls is defined %}
 {% for url in check.urls %}
         [[box.web.url]]
@@ -100,11 +119,10 @@ ip = "{{ box.ip }}"
 
 {% endfor %}
 {% endif %}
-{# SSH/WinRM Commands #}
 {% if check.commands is defined %}
 {% for cmd in check.commands %}
         [[box.{{ check.type }}.command]]
-        command = "{{ cmd.command }}"
+        command = '{{ cmd.command }}'
 {% if cmd.output is defined %}
         output = "{{ cmd.output }}"
 {% endif %}
@@ -117,7 +135,6 @@ ip = "{{ box.ip }}"
 
 {% endfor %}
 {% endif %}
-{# SQL Queries #}
 {% if check.queries is defined %}
 {% for query in check.queries %}
         [[box.sql.query]]
@@ -142,7 +159,6 @@ ip = "{{ box.ip }}"
 
 {% endfor %}
 {% endif %}
-{# FTP/SMB Files #}
 {% if check.domain is defined %}
     domain = "{{ check.domain }}"
 {% endif %}
@@ -162,5 +178,88 @@ ip = "{{ box.ip }}"
 
 {% endfor %}
 {% endif %}
+
 {% endfor %}
+{% elif service_check_defaults is defined and service in service_check_defaults %}
+{# Use default checks for this service #}
+{% for check in service_check_defaults[service] %}
+    [[box.{{ check.type }}]]
+{% if check.display is defined %}
+    display = "{{ check.display }}"
+{% endif %}
+{% if check.credlists is defined %}
+    credlists = [{% for cl in check.credlists %}"{{ cl }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+{% endif %}
+{% if check.port is defined %}
+    port = {{ check.port }}
+{% endif %}
+{% if check.encrypted is defined %}
+    encrypted = {{ check.encrypted | lower }}
+{% endif %}
+{% if check.anonymous is defined %}
+    anonymous = {{ check.anonymous | lower }}
+{% endif %}
+{% if check.urls is defined %}
+{% for url in check.urls %}
+        [[box.web.url]]
+{% if url.path is defined %}
+        path = "{{ url.path }}"
+{% endif %}
+{% if url.status is defined %}
+        status = {{ url.status }}
+{% endif %}
+{% if url.regex is defined %}
+        regex = "{{ url.regex }}"
+{% endif %}
+
+{% endfor %}
+{% endif %}
+{% if check.queries is defined %}
+{% for query in check.queries %}
+        [[box.sql.query]]
+{% if query.database is defined %}
+        database = "{{ query.database }}"
+{% endif %}
+{% if query.databaseexists is defined %}
+        databaseexists = {{ query.databaseexists | lower }}
+{% endif %}
+
+{% endfor %}
+{% endif %}
+
+{% endfor %}
+{% endif %}
+{% endfor %}
+{# Append extra_checks if defined #}
+{% if box_overrides.extra_checks is defined %}
+{% for check in box_overrides.extra_checks %}
+    [[box.{{ check.type }}]]
+{% if check.display is defined %}
+    display = "{{ check.display }}"
+{% endif %}
+{% if check.credlists is defined %}
+    credlists = [{% for cl in check.credlists %}"{{ cl }}"{% if not loop.last %}, {% endif %}{% endfor %}]
+{% endif %}
+{% if check.port is defined %}
+    port = {{ check.port }}
+{% endif %}
+{% if check.commands is defined %}
+{% for cmd in check.commands %}
+        [[box.{{ check.type }}.command]]
+        command = '{{ cmd.command }}'
+{% if cmd.output is defined %}
+        output = "{{ cmd.output }}"
+{% endif %}
+{% if cmd.contains is defined %}
+        contains = {{ cmd.contains | lower }}
+{% endif %}
+{% if cmd.useregex is defined %}
+        useregex = {{ cmd.useregex | lower }}
+{% endif %}
+
+{% endfor %}
+{% endif %}
+
+{% endfor %}
+{% endif %}
 {% endfor %}
