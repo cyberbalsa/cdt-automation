@@ -1,0 +1,164 @@
+---
+# ===========================================================================
+# SETUP MAIL SERVER (Postfix + Dovecot)
+# ===========================================================================
+# Installs and configures Postfix (SMTP) and Dovecot (IMAP) for domain users.
+#
+# Target hosts: [mail] inventory group
+# Services: SMTP (25), IMAP (143)
+# Authentication: Domain users via PAM/SSSD
+# ===========================================================================
+
+- name: Setup Mail Server
+  hosts: mail
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/services.yml
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # STEP 1: Install Postfix and Dovecot
+    # -------------------------------------------------------------------------
+    - name: Install mail packages
+      ansible.builtin.apt:
+        name:
+          - postfix
+          - dovecot-imapd
+          - mailutils
+        state: present
+        update_cache: true
+      environment:
+        DEBIAN_FRONTEND: noninteractive
+
+    # -------------------------------------------------------------------------
+    # STEP 2: Configure Postfix main.cf
+    # -------------------------------------------------------------------------
+    - name: Configure Postfix main settings
+      ansible.builtin.copy:
+        content: |
+          # Postfix main configuration
+          smtpd_banner = $myhostname ESMTP
+          biff = no
+          append_dot_mydomain = no
+
+          # Network settings
+          myhostname = {{ mail_hostname }}
+          mydomain = {{ mail_domain }}
+          myorigin = $mydomain
+          mydestination = $myhostname, localhost.$mydomain, localhost, $mydomain
+          mynetworks = 127.0.0.0/8, 10.10.10.0/24
+
+          # Mailbox settings
+          home_mailbox = Maildir/
+          mailbox_size_limit = 0
+          recipient_delimiter = +
+
+          # SMTP settings
+          inet_interfaces = all
+          inet_protocols = ipv4
+
+          # TLS disabled for simplicity in CTF environment
+          smtpd_tls_security_level = none
+
+          # Authentication via SASL/Dovecot
+          smtpd_sasl_type = dovecot
+          smtpd_sasl_path = private/auth
+          smtpd_sasl_auth_enable = yes
+          smtpd_recipient_restrictions = permit_mynetworks, permit_sasl_authenticated, reject_unauth_destination
+        dest: /etc/postfix/main.cf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart Postfix
+
+    # -------------------------------------------------------------------------
+    # STEP 3: Configure Dovecot
+    # -------------------------------------------------------------------------
+    - name: Configure Dovecot main settings
+      ansible.builtin.copy:
+        content: |
+          # Dovecot configuration
+          protocols = imap
+
+          # Listen on all interfaces
+          listen = *
+
+          # Mail location (Maildir format)
+          mail_location = maildir:~/Maildir
+
+          # Authentication
+          disable_plaintext_auth = no
+          auth_mechanisms = plain login
+
+          # PAM authentication (works with SSSD for domain users)
+          passdb {
+            driver = pam
+            args = dovecot
+          }
+
+          userdb {
+            driver = passwd
+          }
+
+          # SASL for Postfix
+          service auth {
+            unix_listener /var/spool/postfix/private/auth {
+              mode = 0660
+              user = postfix
+              group = postfix
+            }
+          }
+
+          # Namespace
+          namespace inbox {
+            inbox = yes
+            separator = /
+          }
+        dest: /etc/dovecot/dovecot.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart Dovecot
+
+    # -------------------------------------------------------------------------
+    # STEP 4: Configure PAM for Dovecot
+    # -------------------------------------------------------------------------
+    - name: Configure PAM for Dovecot
+      ansible.builtin.copy:
+        content: |
+          # PAM configuration for Dovecot with SSSD support
+          auth    include     common-auth
+          account include     common-account
+          session include     common-session
+        dest: /etc/pam.d/dovecot
+        owner: root
+        group: root
+        mode: "0644"
+
+    # -------------------------------------------------------------------------
+    # STEP 5: Start and enable services
+    # -------------------------------------------------------------------------
+    - name: Enable and start Postfix
+      ansible.builtin.service:
+        name: postfix
+        state: started
+        enabled: true
+
+    - name: Enable and start Dovecot
+      ansible.builtin.service:
+        name: dovecot
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Restart Postfix
+      ansible.builtin.service:
+        name: postfix
+        state: restarted
+
+    - name: Restart Dovecot
+      ansible.builtin.service:
+        name: dovecot
+        state: restarted

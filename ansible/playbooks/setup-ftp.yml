@@ -1,0 +1,101 @@
+---
+# ===========================================================================
+# SETUP FTP SERVER (vsftpd)
+# ===========================================================================
+# Installs and configures vsftpd with domain user authentication via PAM/SSSD.
+#
+# Target hosts: [ftp] inventory group
+# Services: FTP (21)
+# Authentication: Domain users via PAM/SSSD
+# ===========================================================================
+
+- name: Setup vsftpd FTP Server
+  hosts: ftp
+  become: true
+  gather_facts: true
+  vars_files:
+    - ../group_vars/all.yml
+    - ../group_vars/services.yml
+
+  tasks:
+    # -------------------------------------------------------------------------
+    # STEP 1: Install vsftpd
+    # -------------------------------------------------------------------------
+    - name: Install vsftpd
+      ansible.builtin.apt:
+        name: vsftpd
+        state: present
+        update_cache: true
+
+    # -------------------------------------------------------------------------
+    # STEP 2: Configure vsftpd
+    # -------------------------------------------------------------------------
+    - name: Configure vsftpd
+      ansible.builtin.copy:
+        content: |
+          # vsftpd configuration for domain authentication
+          listen=YES
+          listen_ipv6=NO
+
+          # Disable anonymous access
+          anonymous_enable=NO
+
+          # Enable local user access (domain users via PAM/SSSD)
+          local_enable=YES
+          write_enable=YES
+
+          # Chroot users to their home directory
+          chroot_local_user=YES
+          allow_writeable_chroot=YES
+
+          # Use PAM for authentication (works with SSSD for domain users)
+          pam_service_name=vsftpd
+
+          # Passive mode settings
+          pasv_enable=YES
+          pasv_min_port=40000
+          pasv_max_port=40100
+
+          # Logging
+          xferlog_enable=YES
+          xferlog_std_format=YES
+
+          # Security settings
+          ssl_enable=NO
+          seccomp_sandbox=NO
+        dest: /etc/vsftpd.conf
+        owner: root
+        group: root
+        mode: "0644"
+      notify: Restart vsftpd
+
+    # -------------------------------------------------------------------------
+    # STEP 3: Ensure PAM configuration allows SSSD
+    # -------------------------------------------------------------------------
+    - name: Configure PAM for vsftpd
+      ansible.builtin.copy:
+        content: |
+          # PAM configuration for vsftpd with SSSD support
+          auth    required    pam_listfile.so item=user sense=deny file=/etc/ftpusers onerr=succeed
+          auth    include     common-auth
+          account include     common-account
+          session include     common-session
+        dest: /etc/pam.d/vsftpd
+        owner: root
+        group: root
+        mode: "0644"
+
+    # -------------------------------------------------------------------------
+    # STEP 4: Start and enable vsftpd
+    # -------------------------------------------------------------------------
+    - name: Enable and start vsftpd service
+      ansible.builtin.service:
+        name: vsftpd
+        state: started
+        enabled: true
+
+  handlers:
+    - name: Restart vsftpd
+      ansible.builtin.service:
+        name: vsftpd
+        state: restarted

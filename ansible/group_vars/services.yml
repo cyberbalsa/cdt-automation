@@ -37,12 +37,12 @@ mail_hostname: "mail.{{ domain_name }}"
 sql_bind_address: "0.0.0.0"
 sql_scoring_db: "scoring_test"
 sql_scoring_user: "scoring"
-sql_scoring_password: "ScoringDB123!"
+sql_scoring_password: "ScoringDB123"
 
 # ------------------------------------------------------------------------------
 # VNC SERVER (x11vnc)
 # ------------------------------------------------------------------------------
-vnc_password: "VncPass123!"
+vnc_password: "VncPass123"
 vnc_display: ":0"
 vnc_port: 5900
 
@@ -54,4 +54,4 @@ irc_network_name: "CTFNet"
 irc_motd: "Welcome to the CTF IRC server!"
 irc_channel: "#ctf"
 irc_oper_name: "admin"
-irc_oper_password: "IrcAdmin123!"
+irc_oper_password: "IrcAdmin123"
