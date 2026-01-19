@@ -306,6 +306,25 @@ def create_inventory(tofu_data, ansible_dir='ansible', inventory_filename='inven
         f.write("scoring\n")
         f.write("\n")
 
+        # =====================================================================
+        # SERVICE GROUPS
+        # =====================================================================
+        f.write("# ---------------------------------------------------------------------------\n")
+        f.write("# SERVICE GROUPS (auto-generated from OpenTofu service_hosts)\n")
+        f.write("# ---------------------------------------------------------------------------\n")
+        f.write("# These groups are created from the service_hosts variable in variables.tf.\n")
+        f.write("# Use them to target playbooks: ansible-playbook playbooks/setup-web.yml\n")
+        f.write("# The playbook automatically runs against hosts in the [web] group.\n\n")
+
+        # Write each service group
+        for service in sorted(expanded_services.keys()):
+            hosts = expanded_services[service]
+            if hosts:  # Only write groups that have hosts
+                f.write(f"[{service}]\n")
+                for host in sorted(hosts):
+                    f.write(f"{host}\n")
+                f.write("\n")
+
         # All VMs in the competition
         f.write("# All VMs in the CTF\n")
         f.write("[all_vms:children]\n")
