@@ -1,0 +1,20 @@
+# SSSD configuration for {{ ldm_domain_name }}
+[sssd]
+domains = {{ ldm_domain_name }}
+config_file_version = 2
+services = nss, pam
+
+[domain/{{ ldm_domain_name }}]
+ad_domain = {{ ldm_domain_name }}
+krb5_realm = {{ ldm_realm }}
+realmd_tags = manages-system joined-with-adcli
+cache_credentials = True
+id_provider = ad
+krb5_store_password_if_offline = True
+default_shell = /bin/bash
+ldap_id_mapping = True
+use_fully_qualified_names = True
+fallback_homedir = /home/%u@%d
+# Allow all domain users to access services (FTP, IMAP, etc.)
+access_provider = simple
+simple_allow_groups = domain users@{{ ldm_domain_name }}
