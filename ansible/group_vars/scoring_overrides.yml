@@ -1,0 +1,95 @@
+---
+# ==============================================================================
+# SCORING BOX OVERRIDES
+# ==============================================================================
+# Use this file to customize auto-generated checks for specific boxes.
+#
+# TWO TYPES OF CUSTOMIZATION:
+#
+# 1. OVERRIDE A SERVICE CHECK
+#    Define a service key (like "dns" or "web") to completely replace
+#    the default check from scoring_services.yml.
+#
+#    Example - custom DNS records for dc01:
+#      dc01:
+#        dns:
+#          - type: dns
+#            records:
+#              - kind: "A"
+#                domain: "dc01.CDT.local"
+#                answer: ["10.10.10.21"]
+#
+# 2. ADD EXTRA CHECKS
+#    Use "extra_checks" to append additional checks (like flag validations)
+#    without removing the auto-generated service checks.
+#
+#    Example - add flag check to webserver:
+#      webserver:
+#        extra_checks:
+#          - type: ssh
+#            display: "flag"
+#            credlists: ["linux_users"]
+#            commands:
+#              - command: "cat /var/www/html/flag.txt"
+#                contains: true
+#                output: "{{ red_team_token }}"
+#
+# MERGE PRIORITY:
+# 1. If override exists for a service -> use override (replaces default)
+# 2. If no override -> use default from scoring_services.yml
+# 3. extra_checks are always appended after service checks
+# ==============================================================================
+
+scoring_box_overrides:
+  # --------------------------------------------------------------------------
+  # DOMAIN CONTROLLER (dc01)
+  # --------------------------------------------------------------------------
+  dc01:
+    # DNS needs specific records to validate
+    dns:
+      - type: dns
+        records:
+          - kind: "A"
+            domain: "dc01.CDT.local"
+            answer: ["{{ hostvars['dc01']['internal_ip'] }}"]
+          - kind: "A"
+            domain: "CDT.local"
+            answer: ["{{ hostvars['dc01']['internal_ip'] }}"]
+
+    # Flag check - validates Red Team planted flag via WinRM
+    extra_checks:
+      - type: winrm
+        display: "flag"
+        credlists: ["admins"]
+        commands:
+          - command: "Get-Content C:\\Users\\Public\\flag.txt"
+            contains: true
+            output: "{{ red_team_token }}"
+
+  # --------------------------------------------------------------------------
+  # WEB SERVER (webserver)
+  # --------------------------------------------------------------------------
+  webserver:
+    # Flag check - validates Red Team planted flag via SSH
+    extra_checks:
+      - type: ssh
+        display: "flag"
+        credlists: ["linux_users"]
+        commands:
+          - command: "cat /var/www/html/flag.txt 2>/dev/null || echo NOT_FOUND"
+            contains: true
+            output: "{{ red_team_token }}"
+
+  # --------------------------------------------------------------------------
+  # COMMUNICATIONS SERVER (comms)
+  # --------------------------------------------------------------------------
+  comms:
+    # Flag check - validates Red Team planted flag via SSH
+    extra_checks:
+      - type: ssh
+        display: "flag"
+        credlists: ["linux_users"]
+        commands:
+          - command: "cat /home/flag.txt 2>/dev/null || echo NOT_FOUND"
+            contains: true
+            output: "{{ red_team_token }}"
