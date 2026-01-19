@@ -143,6 +143,45 @@ def create_inventory(tofu_data, ansible_dir='ansible', inventory_filename='inven
     red_kali_ips = tofu_data.get('red_kali_ips', {}).get('value', [])
     red_kali_floating_ips = tofu_data.get('red_kali_floating_ips', {}).get('value', [])
 
+    # ===========================================================================
+    # SERVICE CONFIGURATION
+    # ===========================================================================
+    # Read service-to-host mappings from OpenTofu output.
+    # Empty lists get expanded to default hosts based on OS type.
+
+    service_hosts = tofu_data.get('service_hosts', {}).get('value', {})
+
+    # Build lookup sets for default expansion
+    all_linux_hosts = set(scoring_names + blue_linux_names)
+    all_windows_hosts = set(blue_windows_names)
+    all_hosts = all_linux_hosts | all_windows_hosts
+
+    # Expand empty service lists to defaults
+    expanded_services = {}
+    for service, hosts in service_hosts.items():
+        if hosts:  # Explicit host list provided
+            expanded_services[service] = hosts
+        elif service == 'ping':
+            expanded_services[service] = list(all_hosts)
+        elif service in ('ssh',):
+            expanded_services[service] = list(all_linux_hosts)
+        elif service in ('winrm', 'rdp'):
+            expanded_services[service] = list(all_windows_hosts)
+        else:
+            expanded_services[service] = []  # No default for other services
+
+    # Build reverse mapping: hostname -> list of services
+    host_to_services = {}
+    for service, hosts in expanded_services.items():
+        for host in hosts:
+            if host not in host_to_services:
+                host_to_services[host] = []
+            host_to_services[host].append(service)
+
+    # Sort services for consistent output
+    for host in host_to_services:
+        host_to_services[host].sort()
+
     with open(output_path, 'w') as f:
         # =====================================================================
         # INVENTORY FILE HEADER
