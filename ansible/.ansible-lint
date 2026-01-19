@@ -42,6 +42,9 @@ mock_modules:
   - ansible.windows.win_dns_client
   - ansible.windows.win_reboot
   - ansible.windows.win_ping
+  - ansible.windows.win_copy
+  - ansible.windows.win_file
+  - ansible.windows.win_command
   - ansible.builtin.wait_for_connection
   - community.general.ufw
 
