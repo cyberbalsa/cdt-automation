@@ -318,3 +318,15 @@ output "domain_controller_floating_ip" {
 # This allows Ansible to run different playbooks for different teams!
 #
 # ==============================================================================
+
+
+# ------------------------------------------------------------------------------
+# SERVICE CONFIGURATION OUTPUT
+# ------------------------------------------------------------------------------
+# Exports service mappings for the inventory generation script.
+# The script reads this to create Ansible service groups.
+
+output "service_hosts" {
+  description = "Service to hostname mappings for Ansible inventory generation"
+  value       = var.service_hosts
+}

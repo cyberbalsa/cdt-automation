@@ -238,6 +238,52 @@ variable "red_project_id" {
   default     = "4cba761707eb4606a750fb7b3de3948d"
 }
 
+# ------------------------------------------------------------------------------
+# SERVICE CONFIGURATION
+# ------------------------------------------------------------------------------
+# Map services to the hostnames that run them. This flows through to:
+# 1. Ansible inventory groups ([web], [ftp], [ssh], etc.)
+# 2. Scoring engine box configurations
+#
+# EMPTY LIST BEHAVIOR:
+# - ping  = [] -> All boxes get ping checks
+# - ssh   = [] -> All Linux boxes get SSH checks
+# - winrm = [] -> All Windows boxes get WinRM/RDP checks
+# - rdp   = [] -> All Windows boxes get RDP checks
+# - Other services must be explicitly assigned
+#
+# EXAMPLE: To add a new web server:
+# 1. Add hostname to blue_linux_hostnames
+# 2. Add hostname to the "web" list below
+# 3. Run: tofu apply && python3 import-tofu-to-ansible.py
+
+variable "service_hosts" {
+  description = "Map of services to the hostnames that run them"
+  type        = map(list(string))
+  default = {
+    # Core services (empty = apply to all applicable hosts)
+    ping  = []
+    ssh   = []
+    winrm = []
+    rdp   = []
+
+    # Network services
+    dns  = ["dc01"]
+    ldap = ["dc01"]
+
+    # File services
+    smb = ["dc01", "wks-alpha"]
+    ftp = ["webserver"]
+
+    # Application services
+    web  = ["webserver"]
+    sql  = ["comms"]
+    mail = ["comms"]
+    irc  = ["comms"]
+    vnc  = []
+  }
+}
+
 # ==============================================================================
 # ADDING NEW VARIABLES
 # ==============================================================================
