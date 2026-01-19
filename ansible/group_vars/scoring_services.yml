@@ -1,0 +1,131 @@
+---
+# ==============================================================================
+# SERVICE CHECK DEFAULTS
+# ==============================================================================
+# This file maps service names to their default scoring engine checks.
+# When a host has a service assigned in OpenTofu's service_hosts variable,
+# these checks are automatically added to the scoring configuration.
+#
+# HOW IT WORKS:
+# 1. OpenTofu defines: service_hosts = { web = ["webserver"] }
+# 2. Inventory script sets: webserver host_services='["ping","ssh","web"]'
+# 3. Scoring template looks up each service here to get the check definition
+# 4. Result: webserver gets ping, ssh, and web checks in dwayne.conf
+#
+# TO CUSTOMIZE A CHECK FOR A SPECIFIC HOST:
+# Use scoring_overrides.yml instead - it takes priority over these defaults.
+#
+# TO ADD A NEW SERVICE TYPE:
+# 1. Add the service name and check definition below
+# 2. Add hosts to service_hosts in opentofu/variables.tf
+# 3. Regenerate: tofu apply && python3 import-tofu-to-ansible.py
+# ==============================================================================
+
+service_check_defaults:
+  # --------------------------------------------------------------------------
+  # CONNECTIVITY CHECKS
+  # --------------------------------------------------------------------------
+
+  # ICMP ping - basic "is the host alive" check
+  ping:
+    - type: ping
+
+  # --------------------------------------------------------------------------
+  # REMOTE ACCESS - LINUX
+  # --------------------------------------------------------------------------
+
+  # SSH - Secure Shell for Linux command-line access
+  # Uses linux_users credlist (cyberrange account)
+  ssh:
+    - type: ssh
+      credlists: ["linux_users"]
+
+  # --------------------------------------------------------------------------
+  # REMOTE ACCESS - WINDOWS
+  # --------------------------------------------------------------------------
+
+  # WinRM - Windows Remote Management for PowerShell access
+  # Uses admins credlist (Administrator account)
+  winrm:
+    - type: winrm
+      credlists: ["admins"]
+
+  # RDP - Remote Desktop Protocol for graphical access
+  rdp:
+    - type: rdp
+
+  # --------------------------------------------------------------------------
+  # DIRECTORY SERVICES
+  # --------------------------------------------------------------------------
+
+  # DNS - Domain Name System resolution
+  # Note: Specific records must be defined in scoring_overrides.yml per-host
+  dns:
+    - type: dns
+
+  # LDAP - Lightweight Directory Access Protocol
+  # Queries Active Directory
+  ldap:
+    - type: ldap
+
+  # --------------------------------------------------------------------------
+  # FILE SERVICES
+  # --------------------------------------------------------------------------
+
+  # SMB - Server Message Block (Windows file sharing)
+  # Uses TCP check on port 445 for reliability
+  smb:
+    - type: tcp
+      port: 445
+
+  # FTP - File Transfer Protocol
+  # Uses linux_users credlist for authenticated access
+  ftp:
+    - type: ftp
+      credlists: ["linux_users"]
+
+  # --------------------------------------------------------------------------
+  # APPLICATION SERVICES
+  # --------------------------------------------------------------------------
+
+  # Web - HTTP/HTTPS web server
+  # Checks root path returns 200 OK
+  web:
+    - type: web
+      urls:
+        - path: "/"
+          status: 200
+
+  # SQL - MySQL/MariaDB database
+  # Checks database exists and is accessible
+  sql:
+    - type: sql
+      credlists: ["linux_users"]
+      queries:
+        - database: "{{ sql_scoring_db | default('scoring_test') }}"
+          databaseexists: true
+
+  # --------------------------------------------------------------------------
+  # COMMUNICATION SERVICES
+  # --------------------------------------------------------------------------
+
+  # Mail - Email server (SMTP + IMAP)
+  # SMTP for sending, IMAP for receiving
+  mail:
+    - type: smtp
+    - type: imap
+      credlists: ["domain_users"]
+
+  # IRC - Internet Relay Chat
+  # TCP check on default IRC port
+  irc:
+    - type: tcp
+      port: 6667
+
+  # --------------------------------------------------------------------------
+  # REMOTE DESKTOP - LINUX
+  # --------------------------------------------------------------------------
+
+  # VNC - Virtual Network Computing
+  vnc:
+    - type: vnc
